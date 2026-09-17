@@ -97,7 +97,7 @@ import {
 import { usePermissions } from '../hooks/usePermissions';
 import { BLANK_DP, getAvatarUrl } from '../lib/avatar';
 import { aeirmistCache } from '../services/CacheService';
-export { MediaQuality };
+export { MediaQuality } from '../services/MediaService';
 import { mediaService, MediaQuality } from '../services/MediaService';
 import { aeirmistCall } from '../modules/calls/CallService';
 import { messagingService } from '../modules/messaging/MessagingService';
