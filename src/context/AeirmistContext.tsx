@@ -5591,12 +5591,17 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const requestPermission = async (type: any) => {
+    if (permissions[type]?.status === 'granted') {
+      return true;
+    }
     const granted = await _requestPermission(type);
     if (!granted) {
+      setPendingPermission(type);
+    } else {
       addToast({
-        title: "Permission Denied",
-        message: `Please allow ${type} access in your browser, or open the app in a new tab if you are using an iframe.`,
-        type: "warning"
+        title: "Access Granted",
+        message: `${String(type).charAt(0).toUpperCase() + String(type).slice(1)} permission enabled successfully.`,
+        type: "success"
       });
     }
     return granted;

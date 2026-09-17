@@ -1729,9 +1729,15 @@ function AppContent() {
             onClose={() => setPendingPermission(null)}
             status={permissions[pendingPermission]?.status}
             onConfirm={async () => {
-              const success = await _requestPermission(pendingPermission);
+              const permType = pendingPermission;
+              const success = await _requestPermission(permType);
               if (success) {
                 setPendingPermission(null);
+                addToast?.({
+                  title: 'Access Granted',
+                  message: `${String(permType).charAt(0).toUpperCase() + String(permType).slice(1)} permission enabled successfully.`,
+                  type: 'success'
+                });
               }
             }}
           />
