@@ -1020,7 +1020,7 @@ function AppContent() {
     );
   }
 
-  if (isScheduledForPurge) {
+  if (isScheduledForPurge || profile?.scheduledForPurge || profile?.status === 'scheduled_for_deletion') {
     return (
       <Suspense fallback={null}>
         <PurgeScreen onCancel={async () => {

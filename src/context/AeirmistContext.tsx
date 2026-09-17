@@ -2250,12 +2250,30 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             const active = profiles.find(p => p.isActive) || profiles[0];
             setProfile(active);
             setActiveProfileId(active.id);
+            setIsScheduledForPurge(active?.scheduledForPurge === true || active?.status === 'scheduled_for_deletion');
             setNeedsUsername(false);
 
             // If rawProfiles contained multiple conflicting IDs, trigger background cleanup to delete duplicate docs in Firestore
             if (rawProfiles.length > 1) {
               consolidateAndSyncUserProfiles(freshUser).catch(() => {});
             }
+          } else {
+            // Profile was completely wiped (e.g. by admin Hard Delete)
+            logger.warn("[Auth Listener] Profile document was deleted. User purged.");
+            setProfile(null);
+            setAllProfiles([]);
+            setIsScheduledForPurge(false);
+            setNeedsUsername(true);
+            try {
+              localStorage.removeItem('aeirmist_user_profile');
+              localStorage.removeItem('aeirmist_home_feed_cache');
+            } catch (e) {}
+            addToast({
+              title: "Account Terminated",
+              message: "This account was permanently deleted. You can create a new ID now.",
+              type: "warning"
+            });
+            auth.signOut().catch(() => {});
           }
         }, (err) => {
           logger.error("[Diagnostics - Auth] Profile snapshot warning:", err);
@@ -4039,18 +4057,6 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       for (const [collName, docIdsSet] of deleteDocsMap.entries()) {
         for (const docId of Array.from(docIdsSet)) {
-          if (collName === 'posts' || collName === 'feed_comments') {
-            // Anonymize completely to wipe existence: 'Aeirmist User' & BLANK_DP
-            batch.update(doc(db, collName, docId), {
-              userName: 'Aeirmist User',
-              authorName: 'Aeirmist User',
-              userAvatar: BLANK_DP,
-              authorAvatar: BLANK_DP,
-              isDeletedAuthor: true
-            });
-            opCount++;
-            await commitBatchIfNeeded();
-          }
           batch.delete(doc(db, collName, docId));
           opCount++;
           await commitBatchIfNeeded();
@@ -4365,13 +4371,45 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!db || !profile || !user) return;
     try {
       const profileRef = doc(db, 'profiles', profile.id);
-      const purgeDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const purgeDate = new Date(Date.now() + 69 * 24 * 60 * 60 * 1000);
       await updateDoc(profileRef, {
         scheduledForPurge: true,
-        purgeDate: purgeDate.toISOString()
+        purgeDate: purgeDate.toISOString(),
+        deletionRequestedAt: new Date().toISOString(),
+        deletionScheduledFor: purgeDate.toISOString(),
+        status: 'scheduled_for_deletion'
       });
-      await logActivity('account_deleted_request', `Scheduled account for deletion.`);
-      addToast({ title: "Deletion process established", message: "Your account data is scheduled for permanent purge in 30 days. You have been disconnected safely.", type: "warning" });
+
+      // Immediately hide all user's posts from public feeds
+      try {
+        const qPosts1 = query(collection(db, 'posts'), where('authorId', '==', profile.id));
+        const qPosts2 = query(collection(db, 'posts'), where('authorUid', '==', user.uid));
+        const [snap1, snap2] = await Promise.all([getDocs(qPosts1), getDocs(qPosts2)]);
+        const batch = writeBatch(db);
+        const seenPostIds = new Set<string>();
+        [...snap1.docs, ...snap2.docs].forEach(d => {
+          if (!seenPostIds.has(d.id)) {
+            seenPostIds.add(d.id);
+            batch.update(doc(db, 'posts', d.id), {
+              scheduledForPurge: true,
+              isDeletedAuthor: true,
+              hidden: true
+            });
+          }
+        });
+        if (seenPostIds.size > 0) {
+          await batch.commit();
+        }
+      } catch (postErr) {
+        logger.warn("Could not batch hide posts on deletion request", postErr);
+      }
+
+      await logActivity('account_deleted_request', `Scheduled account for deletion in 69 days.`);
+      addToast({ 
+        title: "Account Scheduled For Deletion", 
+        message: "Your account is scheduled for permanent deletion in 69 days. If you log back in before then, you will be asked if you want to keep this ID.", 
+        type: "warning" 
+      });
       await logout();
     } catch (error) {
       logger.error("[requestDeleteAccount] failed:", error);
@@ -4385,11 +4423,39 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const profileRef = doc(db, 'profiles', profile.id);
       await updateDoc(profileRef, {
         scheduledForPurge: false,
-        purgeDate: null
+        purgeDate: null,
+        deletionRequestedAt: null,
+        deletionScheduledFor: null,
+        status: 'active'
       });
       setIsScheduledForPurge(false);
-      await logActivity('linked_account_added', `Reactivated system link. Deletion process aborted.`);
-      addToast({ title: "Aeirmist Link Restored", message: "Account deletion aborted. Welcome back.", type: "success" });
+
+      // Unhide user's posts so they appear back in feed
+      try {
+        const qPosts1 = query(collection(db, 'posts'), where('authorId', '==', profile.id));
+        const qPosts2 = query(collection(db, 'posts'), where('authorUid', '==', user.uid));
+        const [snap1, snap2] = await Promise.all([getDocs(qPosts1), getDocs(qPosts2)]);
+        const batch = writeBatch(db);
+        const seenPostIds = new Set<string>();
+        [...snap1.docs, ...snap2.docs].forEach(d => {
+          if (!seenPostIds.has(d.id)) {
+            seenPostIds.add(d.id);
+            batch.update(doc(db, 'posts', d.id), {
+              scheduledForPurge: false,
+              isDeletedAuthor: false,
+              hidden: false
+            });
+          }
+        });
+        if (seenPostIds.size > 0) {
+          await batch.commit();
+        }
+      } catch (postErr) {
+        logger.warn("Could not unhide posts on reactivation", postErr);
+      }
+
+      await logActivity('linked_account_added', `Reactivated ID. Deletion process cancelled.`);
+      addToast({ title: "Account Restored", message: "Account deletion cancelled! Welcome back to Aeirmist.", type: "success" });
     } catch (error) {
       logger.error("[cancelDeleteAccount] failed:", error);
       throw error;
