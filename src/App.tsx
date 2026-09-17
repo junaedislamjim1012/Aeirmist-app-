@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, lazy, Suspense, useEffect, useRef } from 'react';
+import React, { useState, lazy, Suspense, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Navigation, Tab } from './components/Navigation';
@@ -232,7 +232,8 @@ function AppContent() {
     cancelDeleteAccount,
     storyUpload,
     needsPasswordOnboarding,
-    featureFlags
+    featureFlags,
+    addToast
   } = useAeirmist();
   const { isLoading: isThemeLoading } = useTheme();
 
@@ -274,6 +275,113 @@ function AppContent() {
       setShowSafeExit(false);
     }
   }, [loading, user, profile, needsUsername]);
+
+  // Native Android Hardware Back Button Integration
+  const lastBackPressRef = useRef<number>(0);
+  useEffect(() => {
+    let backListener: any;
+    
+    const setupListener = async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        backListener = await CapApp.addListener('backButton', () => {
+          // 1. If Post detail modal is open
+          if (viewingPostId) {
+            setViewingPostId(null);
+            return;
+          }
+          // 2. If Video modal / detail is open
+          if (viewingVideoId) {
+            setViewingVideoId(null);
+            return;
+          }
+          // 3. If Create Post studio is open
+          if (isPosting) {
+            setIsPosting(false);
+            return;
+          }
+          // 4. If Notification Center is open
+          if (isNotificationsOpen) {
+            setIsNotificationsOpen(false);
+            return;
+          }
+          // 5. If Account switcher is open
+          if (isAccountSwitcherOpen) {
+            setIsAccountSwitcherOpen(false);
+            return;
+          }
+          // 6. If Camera is open
+          if (cameraConfig?.isOpen) {
+            setCameraConfig({ ...cameraConfig, isOpen: false });
+            return;
+          }
+          // 7. If Settings sub-section is open
+          if (settingsSection) {
+            setSettingsSection(null);
+            return;
+          }
+          // 8. If viewing another user's profile
+          if (viewingProfile) {
+            setViewingProfile(null);
+            return;
+          }
+          // 9. If viewing a store or product
+          if (viewingStoreId || viewingProductId) {
+            setViewingStoreId(null);
+            setViewingProductId(null);
+            return;
+          }
+          // 10. If in a specific chat in Messenger
+          if (messageRecipient) {
+            setMessageRecipient(null);
+            return;
+          }
+          // 11. If on any tab other than feed, return to feed
+          if (activeTab !== 'feed') {
+            setActiveTab('feed');
+            return;
+          }
+
+          // 12. At root home feed: double back press within 2000ms to exit app
+          const now = Date.now();
+          if (now - lastBackPressRef.current < 2000) {
+            CapApp.exitApp();
+          } else {
+            lastBackPressRef.current = now;
+            addToast?.({
+              title: 'Exit App',
+              message: 'Press back again to exit Aeirmist.',
+              type: 'info'
+            });
+          }
+        });
+      } catch (err) {
+        // Not in Capacitor native environment
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (backListener?.remove) {
+        backListener.remove();
+      }
+    };
+  }, [
+    viewingPostId, 
+    viewingVideoId, 
+    isPosting, 
+    isNotificationsOpen, 
+    isAccountSwitcherOpen, 
+    cameraConfig, 
+    settingsSection, 
+    viewingProfile, 
+    viewingStoreId, 
+    viewingProductId, 
+    messageRecipient, 
+    activeTab, 
+    addToast
+  ]);
 
   React.useEffect(() => {
     const handleNavigate = (e: any) => {
