@@ -968,9 +968,13 @@ function AppContent() {
 
   // Show unified Welcome screen on opening / initial load
   if (loading || (showSplash && !needsUsername)) {
-    const displayNameText = user 
-      ? (profile?.displayName || user.displayName || user.email?.split('@')[0] || 'User')
-      : 'AEIRMIST';
+    const idName = (profile?.displayName?.trim() 
+      || profile?.fullName?.trim() 
+      || profile?.name?.trim() 
+      || (user?.displayName && user.displayName !== profile?.username ? user.displayName.trim() : '')
+      || 'Aeirmist Member');
+
+    const displayNameText = user ? idName : 'AEIRMIST';
 
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center z-[100] overflow-hidden select-none">
