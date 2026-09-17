@@ -4,77 +4,52 @@ service firebase.storage {
     
     // -- PRIMITIVES --
     function isSignedIn() { return request.auth != null; }
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
     
     // -- PATHS --
     
-    // Unified User Media Structure
-    match /users/{userId}/{folder}/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
+    // Allow any signed-in user to upload and read across standard user/media folders
+    match /users/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
     
-    // User profile avatars & covers
     match /avatars/{userId}/{allPaths=**} {
       allow read: if true;
-      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+      allow write: if isSignedIn();
     }
     
     match /profiles/{userId}/{allPaths=**} {
       allow read: if true;
-      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+      allow write: if isSignedIn();
     }
     
-    // Feed posts
-    match /posts/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
+    match /posts/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
-    // Wallpapers
-    match /wallpapers/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+    match /videos/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
-    // Vault
-    match /vault/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
+    match /stories/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn();
     }
 
-    // Stores & Marketplace
-    match /stores/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
-    }
-
-    match /products/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
-    }
-
-    // Videos
-    match /videos/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
-    }
-
-    // Stories
-    match /stories/{allPaths=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && request.resource.size < 100 * 1024 * 1024;
-    }
-
-    // Messenger Media
     match /chats/{chatId}/{allPaths=**} {
       allow read, write: if isSignedIn();
     }
     
-    // Notes
-    match /notes/{allPaths=**} {
-      allow read: if isSignedIn();
+    match /notes/{userId}/{allPaths=**} {
+      allow read: if true;
       allow write: if isSignedIn();
+    }
+
+    // Catch-all fallback for any other storage paths
+    match /{allPaths=**} {
+      allow read, write: if isSignedIn();
     }
   }
 }
