@@ -5,7 +5,7 @@ import {
   Link as LinkIcon, Sparkles, Trash2, Globe, Eye, MessageSquare, 
   Settings, Monitor, Smartphone, LayoutGrid, Check, Play, Pause, 
   AlertCircle, ChevronLeft, ChevronRight, X, Clock, HelpCircle, ArrowLeft, 
-  ShieldCheck, Sliders, Plus, Edit3, Lock, MessageCircle
+  ShieldCheck, Sliders, Plus, Edit3, Lock, MessageCircle, ChevronDown
 } from 'lucide-react';
 import { useAeirmist } from '../../context/AeirmistContext';
 import { getAvatarUrl } from '../../lib/avatar';
@@ -94,7 +94,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
   const [hideLikes, setHideLikes] = useState(false);
   const [sensitiveWarning, setSensitiveWarning] = useState(false);
 
-  // UI tool drawer state: 'none' | 'filters' | 'music' | 'tag' | 'location' | 'theme' | 'audience' | 'settings' | 'link' | 'poll'
+  // Categorized tool drawer state: null | 'filters' | 'music' | 'tag' | 'location' | 'theme' | 'audience' | 'settings' | 'link' | 'poll'
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -292,7 +292,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
         authorId: profile?.id || 'unknown',
         authorUid: user?.uid || 'unknown',
         author: {
-          displayName: profile?.displayName || 'User',
+          displayName: profile?.displayName || profile?.fullName || profile?.name || 'User',
           username: profile?.username || 'user',
           photoURL: getAvatarUrl(profile?.photoURL),
           isVerified: profile?.isVerified || false
@@ -348,19 +348,20 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
   };
 
   const currentMedia = mediaFiles[selectedMediaIdx];
+  const userDisplayName = profile?.displayName || profile?.fullName || profile?.name || 'User';
 
   return (
-    <div className="flex flex-col h-full max-h-[96vh] sm:max-h-[92vh] text-white overflow-hidden font-sans bg-[#05070d]">
+    <div className="flex flex-col h-full w-full text-white overflow-hidden font-sans bg-[#05070d]">
       
       {/* 1. TOP APP BAR */}
-      <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-white/10 shrink-0 bg-[#070a12]/95 backdrop-blur-xl z-20">
-        <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center justify-between px-3 sm:px-5 py-3 border-b border-white/10 shrink-0 bg-[#070a12]/95 backdrop-blur-xl z-20">
+        <div className="flex items-center gap-2.5">
           <button 
             onClick={onClose}
-            className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center hover:bg-white/10 rounded-full transition-all cursor-pointer text-white/80 hover:text-white active:scale-95"
+            className="w-9 h-9 flex items-center justify-center hover:bg-white/10 rounded-full transition-all cursor-pointer text-white/80 hover:text-white active:scale-95"
             aria-label="Close studio"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={19} />
           </button>
           <div className="flex items-center gap-2">
             <h1 className="text-sm sm:text-base font-bold text-white tracking-tight">Create Post</h1>
@@ -372,21 +373,21 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
           {localStorage.getItem('aeirmist_studio_draft') && (
             <button
               onClick={handleRestoreDraft}
-              className="px-2.5 py-1 bg-white/5 border border-white/10 hover:bg-white/10 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-white/70 hover:text-white"
+              className="px-2.5 py-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-[11px] font-bold rounded-xl transition-all cursor-pointer text-white/70 hover:text-white"
             >
               Restore
             </button>
           )}
           <button
             onClick={handleSaveDraft}
-            className="px-2.5 py-1 bg-white/5 border border-white/10 hover:bg-white/10 text-[11px] font-bold rounded-xl transition-all cursor-pointer hidden sm:block text-white/70 hover:text-white"
+            className="px-2.5 py-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-[11px] font-bold rounded-xl transition-all cursor-pointer hidden sm:block text-white/70 hover:text-white"
           >
             Save Draft
           </button>
           <button
             disabled={isUploading}
             onClick={handlePublish}
-            className="px-4 sm:px-5 py-1.5 sm:py-2 bg-aeirmist-cyan text-black hover:brightness-110 active:scale-95 text-xs font-black uppercase rounded-full transition-all shadow-[0_0_20px_rgba(0,242,255,0.3)] disabled:opacity-40 flex items-center gap-1.5 justify-center cursor-pointer"
+            className="px-5 py-2 bg-aeirmist-cyan text-black hover:brightness-110 active:scale-95 text-xs font-black uppercase rounded-full transition-all shadow-[0_0_20px_rgba(0,242,255,0.3)] disabled:opacity-40 flex items-center gap-1.5 justify-center cursor-pointer"
           >
             {isUploading ? (
               <Clock size={13} className="animate-spin" />
@@ -399,13 +400,13 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
       </div>
 
       {/* 2. POST FORMAT PILL BAR */}
-      <div className="px-3 sm:px-4 py-2 border-b border-white/5 bg-[#030408] shrink-0 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+      <div className="px-3 sm:px-5 py-2.5 border-b border-white/5 bg-[#030408] shrink-0 overflow-x-auto no-scrollbar flex items-center gap-2">
         {[
-          { id: 'photo', label: 'Media', icon: Camera },
-          { id: 'text', label: 'Text Card', icon: FileText },
+          { id: 'photo', label: 'Photos / Videos', icon: Camera },
+          { id: 'text', label: 'Story Card', icon: FileText },
           { id: 'poll', label: 'Poll', icon: ListTodo },
           { id: 'gif', label: 'GIF', icon: Sparkles },
-          { id: 'link', label: 'Link', icon: LinkIcon }
+          { id: 'link', label: 'Link Preview', icon: LinkIcon }
         ].map(mode => (
           <button
             key={mode.id}
@@ -414,9 +415,9 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
               setSelectedType(mode.id);
               setActiveTool(null);
             }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap border ${
+            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer whitespace-nowrap border ${
               selectedType === mode.id 
-                ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md shadow-aeirmist-cyan/20' 
+                ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md shadow-aeirmist-cyan/20 font-black' 
                 : 'bg-white/[0.03] text-white/60 border-white/5 hover:text-white hover:bg-white/10'
             }`}
           >
@@ -426,19 +427,18 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
         ))}
       </div>
 
-      {/* 3. MAIN WORKSPACE CONTAINER */}
-      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-y-auto bg-[#020509]">
+      {/* 3. SCROLLABLE COMPOSER BODY */}
+      <div className="flex-1 overflow-y-auto bg-[#020509] p-3 sm:p-6 space-y-4">
         
-        {/* LEFT / TOP: INTERACTIVE PREVIEW STAGE */}
-        <div className="w-full md:w-[55%] lg:w-[60%] flex flex-col bg-[#010307] border-b md:border-b-0 md:border-r border-white/10 p-3 sm:p-5 shrink-0 md:shrink">
+        {/* A. INTERACTIVE MEDIA / CANVAS PREVIEW STAGE */}
+        <div className="w-full bg-[#010307] rounded-3xl border border-white/10 p-3 sm:p-4 overflow-hidden shadow-2xl space-y-3">
           
-          {/* STAGE CONTAINER */}
-          <div className="w-full aspect-[4/3] sm:aspect-square md:aspect-auto md:h-full max-h-[380px] md:max-h-[520px] rounded-2xl overflow-hidden bg-black/60 border border-white/10 relative flex items-center justify-center select-none shadow-2xl">
+          <div className="w-full aspect-[4/3] sm:aspect-video max-h-[360px] sm:max-h-[460px] rounded-2xl overflow-hidden bg-black/60 border border-white/5 relative flex items-center justify-center select-none shadow-inner">
             
             {/* 1. PHOTO & VIDEO MODE */}
             {selectedType === 'photo' && (
               mediaFiles.length > 0 ? (
-                <div className="w-full h-full relative flex items-center justify-center overflow-hidden">
+                <div className="w-full h-full relative flex items-center justify-center overflow-hidden bg-black">
                   {currentMedia?.type?.startsWith('video/') ? (
                     <video
                       src={currentMedia.url}
@@ -464,12 +464,12 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
                     />
                   )}
 
-                  {/* Overlay Quick Actions: Edit Filters button */}
-                  <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
+                  {/* Overlay Quick Action: Edit Filters button */}
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
                     <button
                       type="button"
                       onClick={() => setActiveTool(activeTool === 'filters' ? null : 'filters')}
-                      className="px-2.5 py-1.5 bg-black/70 backdrop-blur-md border border-white/20 hover:bg-black/90 text-white rounded-xl text-[11px] font-bold flex items-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
+                      className="px-3 py-1.5 bg-black/80 backdrop-blur-md border border-white/20 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg active:scale-95 transition-all cursor-pointer"
                     >
                       <Sliders size={13} className="text-aeirmist-cyan" />
                       <span>{activeTool === 'filters' ? 'Close Editor' : 'Edit & Crop'}</span>
@@ -478,9 +478,9 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
 
                   {/* Sound Tag Indicator on Media */}
                   {selectedMusic && (
-                    <div className="absolute bottom-2.5 left-2.5 bg-black/80 backdrop-blur-md border border-white/20 rounded-xl px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-white shadow-lg">
+                    <div className="absolute bottom-3 left-3 bg-black/85 backdrop-blur-md border border-white/20 rounded-xl px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-white shadow-lg">
                       <MusicIcon size={12} className="text-aeirmist-cyan animate-pulse" />
-                      <span className="font-bold truncate max-w-[140px]">{selectedMusic.track.title}</span>
+                      <span className="font-bold truncate max-w-[150px]">{selectedMusic.track.title}</span>
                     </div>
                   )}
                 </div>
@@ -491,15 +491,15 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
                   className="w-full h-full flex flex-col items-center justify-center p-6 text-center cursor-pointer hover:bg-white/[0.02] transition-colors"
                 >
                   <div className="w-14 h-14 rounded-2xl bg-aeirmist-cyan/10 border border-aeirmist-cyan/30 flex items-center justify-center text-aeirmist-cyan mb-3 shadow-lg">
-                    <ImageIcon size={26} />
+                    <ImageIcon size={28} />
                   </div>
-                  <h3 className="text-xs sm:text-sm font-bold text-white mb-1">Select Photos or Videos</h3>
-                  <p className="text-[10px] text-white/40 mb-3 font-mono">PNG, JPG, MP4 up to 10 items</p>
+                  <h3 className="text-xs sm:text-sm font-bold text-white mb-1">Add Photos & Videos</h3>
+                  <p className="text-[10px] text-white/40 mb-3 font-mono">JPG, PNG, WEBP, MP4 (Up to 10 files)</p>
                   <button
                     type="button"
                     className="px-4 py-2 bg-aeirmist-cyan text-black font-black text-xs uppercase tracking-wider rounded-full shadow-lg shadow-aeirmist-cyan/20 active:scale-95 transition-all"
                   >
-                    Browse Device
+                    Select From Device
                   </button>
                   <input
                     type="file"
@@ -525,7 +525,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
                     />
                     <div>
                       <div className="text-xs font-bold text-white flex items-center gap-1">
-                        <span>{profile?.displayName || 'User'}</span>
+                        <span>{userDisplayName}</span>
                         {profile?.isVerified && <ShieldCheck size={12} className="text-aeirmist-cyan" />}
                       </div>
                       <div className="text-[9px] text-white/40 font-mono">Plain Text Feed Post</div>
@@ -555,7 +555,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
                     <img src={getAvatarUrl(profile?.photoURL)} className="w-8 h-8 rounded-full border border-white/20 object-cover" alt="" />
                     <div>
                       <div className="text-xs font-bold text-white flex items-center gap-1">
-                        <span>@{profile?.username || 'user'}</span>
+                        <span>{userDisplayName}</span>
                         {profile?.isVerified && <ShieldCheck size={12} className="text-aeirmist-cyan" />}
                       </div>
                       <div className="text-[9px] text-white/50 uppercase tracking-widest font-mono">Canvas Card</div>
@@ -581,7 +581,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
 
             {/* 3. POLL MODE */}
             {selectedType === 'poll' && (
-              <div className="w-full max-w-xs sm:max-w-sm bg-[#080d17] border border-white/10 p-5 rounded-2xl space-y-3 text-left shadow-2xl">
+              <div className="w-full max-w-sm bg-[#080d17] border border-white/10 p-5 rounded-2xl space-y-3 text-left shadow-2xl">
                 <div className="flex items-center gap-2 text-aeirmist-cyan font-bold text-xs uppercase tracking-wider">
                   <ListTodo size={16} />
                   <span>Interactive Poll</span>
@@ -619,7 +619,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
 
             {/* 5. LINK MODE */}
             {selectedType === 'link' && (
-              <div className="w-full max-w-xs sm:max-w-sm bg-[#080d17] border border-white/10 rounded-2xl overflow-hidden shadow-2xl text-left">
+              <div className="w-full max-w-sm bg-[#080d17] border border-white/10 rounded-2xl overflow-hidden shadow-2xl text-left">
                 {linkPreview ? (
                   <div>
                     <img src={linkPreview.image} className="w-full h-32 object-cover" alt="" />
@@ -633,7 +633,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
                   <div className="p-6 text-center space-y-2">
                     <LinkIcon size={30} className="mx-auto text-white/30" />
                     <h4 className="text-xs font-bold text-white">Attach Web Link</h4>
-                    <p className="text-[10px] text-white/40">Use the link tool below to fetch title and preview card.</p>
+                    <p className="text-[10px] text-white/40">Use the link row below to fetch title and preview card.</p>
                   </div>
                 )}
               </div>
@@ -643,7 +643,7 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
 
           {/* CAROUSEL THUMBNAIL STRIP */}
           {selectedType === 'photo' && mediaFiles.length > 0 && (
-            <div className="flex items-center gap-2 mt-3 overflow-x-auto no-scrollbar py-1 shrink-0">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 shrink-0">
               {mediaFiles.map((file, idx) => (
                 <div 
                   key={idx}
@@ -686,375 +686,349 @@ export const PostStudio: React.FC<PostStudioProps> = React.memo(({ onClose, init
 
         </div>
 
-        {/* RIGHT / BOTTOM: CAPTION, DISCIPLINED TOOL ROW & DRAWERS */}
-        <div className="w-full md:w-[45%] lg:w-[40%] flex flex-col p-3 sm:p-5 space-y-4 overflow-y-auto">
-          
-          {/* User Profile Bar */}
-          <div className="flex items-center justify-between pb-3 border-b border-white/10">
+        {/* B. AUTHOR BAR & CAPTION INPUT */}
+        <div className="bg-[#04060c] border border-white/10 rounded-2xl p-3.5 sm:p-4 space-y-3">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <img 
                 src={getAvatarUrl(profile?.photoURL)} 
-                className="w-8 h-8 rounded-full border border-white/20 object-cover" 
+                className="w-9 h-9 rounded-full border border-white/20 object-cover shadow-sm" 
                 alt="" 
               />
               <div>
-                <span className="text-xs font-bold text-white block">{profile?.displayName || profile?.username || 'User'}</span>
+                <span className="text-xs font-bold text-white block">{userDisplayName}</span>
                 <span className="text-[10px] text-white/40 block font-mono">@{profile?.username || 'user'}</span>
               </div>
             </div>
 
             {/* Audience Pill */}
-            <button
-              type="button"
-              onClick={() => setActiveTool(activeTool === 'audience' ? null : 'audience')}
-              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-2.5 py-1 text-[10px] font-bold text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+            <select
+              value={audience}
+              onChange={(e) => setAudience(e.target.value as any)}
+              className="bg-white/5 hover:bg-white/10 border border-white/10 rounded-full px-3 py-1 text-[11px] font-bold text-white focus:outline-none focus:border-aeirmist-cyan cursor-pointer transition-colors"
             >
-              <Globe size={11} className="text-aeirmist-cyan" />
-              <span className="capitalize">{audience.replace('_', ' ')}</span>
-            </button>
+              <option value="public" className="bg-[#05080e] text-white">Public</option>
+              <option value="followers" className="bg-[#05080e] text-white">Followers</option>
+              <option value="close_friends" className="bg-[#05080e] text-white">Close Friends</option>
+              <option value="only_me" className="bg-[#05080e] text-white">Private</option>
+            </select>
           </div>
 
-          {/* CAPTION TEXTAREA (Always available for photo, poll, gif, link) */}
           {selectedType !== 'text' && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-white/70">Caption</label>
-                <span className="text-[10px] font-mono text-white/30">{caption.length} / 3000</span>
-              </div>
+            <div className="space-y-1 pt-1">
               <textarea
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
                 placeholder="Write a caption, mention @friends, add #hashtags..."
                 rows={3}
                 maxLength={3000}
-                className="w-full bg-white/[0.03] border border-white/10 rounded-2xl p-3 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-aeirmist-cyan resize-none leading-relaxed transition-all"
+                className="w-full bg-white/[0.02] border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-white/30 focus:outline-none focus:border-aeirmist-cyan resize-none leading-relaxed transition-all"
               />
+              <div className="flex justify-between items-center text-[10px] text-white/30 font-mono px-1">
+                <span>**bold** *italic*</span>
+                <span>{caption.length} / 3000</span>
+              </div>
             </div>
           )}
+        </div>
 
-          {/* DISCIPLINED HORIZONTAL TOOLBAR ROW */}
-          <div className="space-y-2">
-            <div className="text-[10px] font-bold text-white/40 uppercase tracking-wider">
-              Post Additions & Enhancements
+        {/* C. CATEGORIZED FEATURE ROWS (শ্রেণীবদ্ধ ফিচার লিস্ট) */}
+        <div className="bg-[#04060c] border border-white/10 rounded-2xl overflow-hidden divide-y divide-white/5">
+          
+          {/* 1. Add Music / Sound */}
+          <div 
+            onClick={() => setActiveTool(activeTool === 'music' ? null : 'music')}
+            className="flex items-center justify-between p-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-aeirmist-cyan/10 border border-aeirmist-cyan/30 flex items-center justify-center text-aeirmist-cyan">
+                <MusicIcon size={15} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">Add Music & Soundtrack</div>
+                <div className="text-[10px] text-white/40 truncate max-w-[200px]">
+                  {selectedMusic ? `${selectedMusic.track.title} • ${selectedMusic.track.artist}` : 'Hindi, Bangla, Spotify hits'}
+                </div>
+              </div>
             </div>
-
-            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
-              {/* Tool: Filters (if photo active) */}
-              {selectedType === 'photo' && mediaFiles.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTool(activeTool === 'filters' ? null : 'filters')}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                    activeTool === 'filters'
-                      ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                      : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                  }`}
-                >
-                  <Sliders size={13} />
-                  <span>Filters</span>
-                </button>
-              )}
-
-              {/* Tool: Music */}
-              <button
-                type="button"
-                onClick={() => setActiveTool(activeTool === 'music' ? null : 'music')}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                  selectedMusic 
-                    ? 'bg-green-500/20 text-green-300 border-green-500/40 shadow-sm' 
-                    : activeTool === 'music'
-                    ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                    : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                }`}
-              >
-                <MusicIcon size={13} className={selectedMusic ? 'text-green-400' : ''} />
-                <span>{selectedMusic ? 'Music Added' : 'Add Music'}</span>
-                {selectedMusic && <span className="w-1.5 h-1.5 rounded-full bg-green-400" />}
-              </button>
-
-              {/* Tool: Tag People */}
-              <button
-                type="button"
-                onClick={() => setActiveTool(activeTool === 'tag' ? null : 'tag')}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                  taggedPeople.length > 0
-                    ? 'bg-aeirmist-cyan/20 text-aeirmist-cyan border-aeirmist-cyan/40 shadow-sm'
-                    : activeTool === 'tag'
-                    ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                    : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                }`}
-              >
-                <Users size={13} />
-                <span>Tag {taggedPeople.length > 0 ? `(${taggedPeople.length})` : ''}</span>
-              </button>
-
-              {/* Tool: Location */}
-              <button
-                type="button"
-                onClick={() => setActiveTool(activeTool === 'location' ? null : 'location')}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                  location
-                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-sm'
-                    : activeTool === 'location'
-                    ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                    : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                }`}
-              >
-                <MapPin size={13} />
-                <span className="truncate max-w-[100px]">{location ? location.split(',')[0] : 'Location'}</span>
-              </button>
-
-              {/* Tool: Canvas Theme (Only for Text mode) */}
-              {selectedType === 'text' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTool(activeTool === 'theme' ? null : 'theme')}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                    activeTool === 'theme'
-                      ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                      : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                  }`}
-                >
-                  <Sparkles size={13} />
-                  <span>Theme</span>
-                </button>
-              )}
-
-              {/* Tool: Poll Setup */}
-              {selectedType === 'poll' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTool(activeTool === 'poll' ? null : 'poll')}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                    activeTool === 'poll'
-                      ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                      : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                  }`}
-                >
-                  <ListTodo size={13} />
-                  <span>Edit Options</span>
-                </button>
-              )}
-
-              {/* Tool: Link URL */}
-              {selectedType === 'link' && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTool(activeTool === 'link' ? null : 'link')}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                    activeTool === 'link'
-                      ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                      : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                  }`}
-                >
-                  <LinkIcon size={13} />
-                  <span>URL Meta</span>
-                </button>
-              )}
-
-              {/* Tool: Settings / Privacy */}
-              <button
-                type="button"
-                onClick={() => setActiveTool(activeTool === 'settings' ? null : 'settings')}
-                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all border cursor-pointer ${
-                  activeTool === 'settings'
-                    ? 'bg-aeirmist-cyan text-black border-aeirmist-cyan shadow-md'
-                    : 'bg-white/5 text-white/80 border-white/10 hover:bg-white/10'
-                }`}
-              >
-                <Settings size={13} />
-                <span>Options</span>
-              </button>
+            <div className="flex items-center gap-2">
+              {selectedMusic && <span className="w-2 h-2 rounded-full bg-green-400" />}
+              <ChevronRight size={15} className={`text-white/30 transition-transform ${activeTool === 'music' ? 'rotate-90 text-aeirmist-cyan' : ''}`} />
             </div>
           </div>
 
-          {/* ACTIVE TOOL DRAWER / PANEL (Clean collapsible container) */}
-          {activeTool && (
-            <div className="bg-[#090d16] border border-white/15 rounded-2xl p-4 space-y-3 relative shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                <span className="text-xs font-black uppercase text-aeirmist-cyan tracking-wider">
-                  {activeTool === 'filters' && 'Media Filters & Adjustments'}
-                  {activeTool === 'music' && 'Music & Soundtrack'}
-                  {activeTool === 'tag' && 'Tag People'}
-                  {activeTool === 'location' && 'Add Location'}
-                  {activeTool === 'theme' && 'Canvas Card Background'}
-                  {activeTool === 'poll' && 'Configure Poll'}
-                  {activeTool === 'link' && 'Web Link Card'}
-                  {activeTool === 'audience' && 'Audience Privacy'}
-                  {activeTool === 'settings' && 'Advanced Post Settings'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setActiveTool(null)}
-                  className="w-6 h-6 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white"
-                >
-                  <X size={13} />
-                </button>
+          {/* 2. Tag People */}
+          <div 
+            onClick={() => setActiveTool(activeTool === 'tag' ? null : 'tag')}
+            className="flex items-center justify-between p-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                <Users size={15} />
               </div>
-
-              {/* Drawer Content */}
               <div>
-                {/* 1. Filters & Adjust Drawer */}
-                {activeTool === 'filters' && currentMedia && (
-                  <div className="py-1">
-                    <MediaEditor
-                      file={currentMedia}
-                      onChange={handleMediaChange}
-                    />
-                  </div>
-                )}
-
-                {/* 2. Music Drawer */}
-                {activeTool === 'music' && (
-                  <MusicSelector
-                    selectedTrack={selectedMusic}
-                    onChange={setSelectedMusic}
-                  />
-                )}
-
-                {/* 3. Tag People Drawer */}
-                {activeTool === 'tag' && (
-                  <TagPeople
-                    taggedUsers={taggedPeople}
-                    onChange={setTaggedPeople}
-                  />
-                )}
-
-                {/* 4. Location Drawer */}
-                {activeTool === 'location' && (
-                  <LocationSearch
-                    selectedLocation={location}
-                    onSelect={setLocation}
-                  />
-                )}
-
-                {/* 5. Canvas Theme Drawer */}
-                {activeTool === 'theme' && (
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    {THEME_GRADIENTS.map(grad => (
-                      <button
-                        key={grad.id}
-                        type="button"
-                        onClick={() => setSelectedGradient(grad)}
-                        className={`p-3 rounded-xl text-xs font-bold border text-left truncate transition-all cursor-pointer ${
-                          selectedGradient.id === grad.id 
-                            ? 'border-aeirmist-cyan shadow-md shadow-aeirmist-cyan/20 text-white' 
-                            : 'border-white/10 text-white/60 hover:text-white'
-                        }`}
-                        style={{ background: grad.css }}
-                      >
-                        {grad.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* 6. Poll Options Drawer */}
-                {activeTool === 'poll' && (
-                  <PollComposer poll={poll} onChange={setPoll} />
-                )}
-
-                {/* 7. Link Drawer */}
-                {activeTool === 'link' && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-white/70 block">Target URL</label>
-                    <div className="flex gap-2">
-                      <input 
-                        type="text" 
-                        value={linkUrl}
-                        onChange={(e) => setLinkUrl(e.target.value)}
-                        placeholder="https://example.com"
-                        className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-aeirmist-cyan"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          if (!linkUrl) return;
-                          setLinkPreview({
-                            url: linkUrl,
-                            title: `${linkUrl.replace('https://', '').split('/')[0]} Hub`,
-                            description: 'Explore verified shared channels and updates instantly on Aeirmist platform.',
-                            image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&q=80'
-                          });
-                        }}
-                        className="px-4 bg-aeirmist-cyan text-black text-xs font-bold rounded-xl hover:brightness-110 transition-all"
-                      >
-                        Fetch
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 8. Audience Drawer */}
-                {activeTool === 'audience' && (
-                  <div className="space-y-2 pt-1">
-                    {[
-                      { id: 'public', label: 'Public', desc: 'Anyone on Aeirmist can see this post' },
-                      { id: 'followers', label: 'Followers Only', desc: 'Only your verified followers' },
-                      { id: 'close_friends', label: 'Close Friends', desc: 'Only users in your close circle' },
-                      { id: 'only_me', label: 'Private (Only Me)', desc: 'Visible only to you' }
-                    ].map(aud => (
-                      <div
-                        key={aud.id}
-                        onClick={() => setAudience(aud.id as any)}
-                        className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
-                          audience === aud.id
-                            ? 'bg-aeirmist-cyan/10 border-aeirmist-cyan'
-                            : 'bg-white/[0.02] border-white/5 hover:bg-white/5'
-                        }`}
-                      >
-                        <div>
-                          <div className="text-xs font-bold text-white">{aud.label}</div>
-                          <div className="text-[10px] text-white/40">{aud.desc}</div>
-                        </div>
-                        {audience === aud.id && <Check size={14} className="text-aeirmist-cyan" />}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* 9. Settings Drawer */}
-                {activeTool === 'settings' && (
-                  <div className="space-y-3 pt-1">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-white/80">Allow Comments</span>
-                      <button 
-                        type="button"
-                        onClick={() => setAllowComments(!allowComments)} 
-                        className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${allowComments ? 'bg-aeirmist-cyan' : 'bg-white/10'}`}
-                      >
-                        <div className={`w-4 h-4 rounded-full bg-black transition-transform ${allowComments ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-white/80">Hide Like Counts</span>
-                      <button 
-                        type="button"
-                        onClick={() => setHideLikes(!hideLikes)} 
-                        className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${hideLikes ? 'bg-aeirmist-cyan' : 'bg-white/10'}`}
-                      >
-                        <div className={`w-4 h-4 rounded-full bg-black transition-transform ${hideLikes ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-white/80">Sensitive Content Flag</span>
-                      <button 
-                        type="button"
-                        onClick={() => setSensitiveWarning(!sensitiveWarning)} 
-                        className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${sensitiveWarning ? 'bg-red-500' : 'bg-white/10'}`}
-                      >
-                        <div className={`w-4 h-4 rounded-full bg-black transition-transform ${sensitiveWarning ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                  </div>
-                )}
+                <div className="text-xs font-bold text-white">Tag People</div>
+                <div className="text-[10px] text-white/40">
+                  {taggedPeople.length > 0 ? `${taggedPeople.length} user(s) tagged` : 'Tag friends in this post'}
+                </div>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {taggedPeople.length > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold">
+                  {taggedPeople.length}
+                </span>
+              )}
+              <ChevronRight size={15} className={`text-white/30 transition-transform ${activeTool === 'tag' ? 'rotate-90 text-aeirmist-cyan' : ''}`} />
+            </div>
+          </div>
+
+          {/* 3. Add Location */}
+          <div 
+            onClick={() => setActiveTool(activeTool === 'location' ? null : 'location')}
+            className="flex items-center justify-between p-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-pink-500/10 border border-pink-500/30 flex items-center justify-center text-pink-400">
+                <MapPin size={15} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">Add Location</div>
+                <div className="text-[10px] text-white/40 truncate max-w-[200px]">
+                  {location || 'Search place or city'}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {location && <span className="w-2 h-2 rounded-full bg-pink-400" />}
+              <ChevronRight size={15} className={`text-white/30 transition-transform ${activeTool === 'location' ? 'rotate-90 text-aeirmist-cyan' : ''}`} />
+            </div>
+          </div>
+
+          {/* 4. Canvas Theme (Only for Text Mode) */}
+          {selectedType === 'text' && (
+            <div 
+              onClick={() => setActiveTool(activeTool === 'theme' ? null : 'theme')}
+              className="flex items-center justify-between p-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Sparkles size={15} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white">Story Card Theme</div>
+                  <div className="text-[10px] text-white/40">{selectedGradient.label}</div>
+                </div>
+              </div>
+              <ChevronRight size={15} className={`text-white/30 transition-transform ${activeTool === 'theme' ? 'rotate-90 text-aeirmist-cyan' : ''}`} />
             </div>
           )}
 
+          {/* 5. Poll Options (Only for Poll Mode) */}
+          {selectedType === 'poll' && (
+            <div 
+              onClick={() => setActiveTool(activeTool === 'poll' ? null : 'poll')}
+              className="flex items-center justify-between p-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                  <ListTodo size={15} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white">Edit Poll Questions & Choices</div>
+                  <div className="text-[10px] text-white/40">Customize choices and answers</div>
+                </div>
+              </div>
+              <ChevronRight size={15} className={`text-white/30 transition-transform ${activeTool === 'poll' ? 'rotate-90 text-aeirmist-cyan' : ''}`} />
+            </div>
+          )}
+
+          {/* 6. Link Metadata (Only for Link Mode) */}
+          {selectedType === 'link' && (
+            <div 
+              onClick={() => setActiveTool(activeTool === 'link' ? null : 'link')}
+              className="flex items-center justify-between p-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <LinkIcon size={15} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white">Configure Web Link URL</div>
+                  <div className="text-[10px] text-white/40 truncate max-w-[200px]">{linkUrl || 'Enter target website link'}</div>
+                </div>
+              </div>
+              <ChevronRight size={15} className={`text-white/30 transition-transform ${activeTool === 'link' ? 'rotate-90 text-aeirmist-cyan' : ''}`} />
+            </div>
+          )}
+
+          {/* 7. Advanced Settings */}
+          <div 
+            onClick={() => setActiveTool(activeTool === 'settings' ? null : 'settings')}
+            className="flex items-center justify-between p-3.5 hover:bg-white/[0.04] transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-zinc-700/30 border border-white/10 flex items-center justify-center text-white/70">
+                <Settings size={15} />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white">Advanced Options</div>
+                <div className="text-[10px] text-white/40">Comments, like counts & flags</div>
+              </div>
+            </div>
+            <ChevronRight size={15} className={`text-white/30 transition-transform ${activeTool === 'settings' ? 'rotate-90 text-aeirmist-cyan' : ''}`} />
+          </div>
+
         </div>
+
+        {/* D. ACTIVE SLIDE-UP DRAWER (Clean contextual modal) */}
+        {activeTool && (
+          <div className="bg-[#090d16] border border-white/15 rounded-3xl p-4 sm:p-5 space-y-3.5 relative shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <span className="text-xs font-black uppercase text-aeirmist-cyan tracking-wider">
+                {activeTool === 'filters' && 'Media Filters & Adjustments'}
+                {activeTool === 'music' && 'Music & Soundtrack'}
+                {activeTool === 'tag' && 'Tag People'}
+                {activeTool === 'location' && 'Add Location'}
+                {activeTool === 'theme' && 'Canvas Card Background'}
+                {activeTool === 'poll' && 'Configure Poll'}
+                {activeTool === 'link' && 'Web Link Card'}
+                {activeTool === 'settings' && 'Advanced Post Settings'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveTool(null)}
+                className="w-7 h-7 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Drawer Components */}
+            <div>
+              {activeTool === 'filters' && currentMedia && (
+                <div className="py-1">
+                  <MediaEditor
+                    file={currentMedia}
+                    onChange={handleMediaChange}
+                  />
+                </div>
+              )}
+
+              {activeTool === 'music' && (
+                <MusicSelector
+                  selectedTrack={selectedMusic}
+                  onChange={setSelectedMusic}
+                />
+              )}
+
+              {activeTool === 'tag' && (
+                <TagPeople
+                  taggedUsers={taggedPeople}
+                  onChange={setTaggedPeople}
+                />
+              )}
+
+              {activeTool === 'location' && (
+                <LocationSearch
+                  selectedLocation={location}
+                  onSelect={setLocation}
+                />
+              )}
+
+              {activeTool === 'theme' && (
+                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                  {THEME_GRADIENTS.map(grad => (
+                    <button
+                      key={grad.id}
+                      type="button"
+                      onClick={() => setSelectedGradient(grad)}
+                      className={`p-3 rounded-2xl text-xs font-bold border text-left truncate transition-all cursor-pointer ${
+                        selectedGradient.id === grad.id 
+                          ? 'border-aeirmist-cyan shadow-md shadow-aeirmist-cyan/20 text-white' 
+                          : 'border-white/10 text-white/60 hover:text-white'
+                      }`}
+                      style={{ background: grad.css }}
+                    >
+                      {grad.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {activeTool === 'poll' && (
+                <PollComposer poll={poll} onChange={setPoll} />
+              )}
+
+              {activeTool === 'link' && (
+                <div className="space-y-2.5">
+                  <label className="text-xs font-bold text-white/70 block">Target URL</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      placeholder="https://example.com"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-aeirmist-cyan"
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        if (!linkUrl) return;
+                        setLinkPreview({
+                          url: linkUrl,
+                          title: `${linkUrl.replace('https://', '').split('/')[0]} Hub`,
+                          description: 'Explore verified shared channels and updates instantly on Aeirmist platform.',
+                          image: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=600&q=80'
+                        });
+                      }}
+                      className="px-4 bg-aeirmist-cyan text-black text-xs font-bold rounded-xl hover:brightness-110 transition-all"
+                    >
+                      Fetch
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {activeTool === 'settings' && (
+                <div className="space-y-3 pt-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-white/80">Allow Comments</span>
+                    <button 
+                      type="button"
+                      onClick={() => setAllowComments(!allowComments)} 
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${allowComments ? 'bg-aeirmist-cyan' : 'bg-white/10'}`}
+                    >
+                      <div className={`w-4 h-4 rounded-full bg-black transition-transform ${allowComments ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-white/80">Hide Like Counts</span>
+                    <button 
+                      type="button"
+                      onClick={() => setHideLikes(!hideLikes)} 
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${hideLikes ? 'bg-aeirmist-cyan' : 'bg-white/10'}`}
+                    >
+                      <div className={`w-4 h-4 rounded-full bg-black transition-transform ${hideLikes ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-white/80">Sensitive Content Flag</span>
+                    <button 
+                      type="button"
+                      onClick={() => setSensitiveWarning(!sensitiveWarning)} 
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${sensitiveWarning ? 'bg-red-500' : 'bg-white/10'}`}
+                    >
+                      <div className={`w-4 h-4 rounded-full bg-black transition-transform ${sensitiveWarning ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
       </div>
 
