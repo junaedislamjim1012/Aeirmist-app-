@@ -276,81 +276,150 @@ function AppContent() {
     }
   }, [loading, user, profile, needsUsername]);
 
-  // Native Android Hardware Back Button Integration
+  // Native Android Hardware Back Button Integration & Navigation Stack
   const lastBackPressRef = useRef<number>(0);
+  const tabHistoryStackRef = useRef<Tab[]>(['feed']);
+
+  // Keep a synchronous, always-up-to-date reference of navigation state
+  const navStateRef = useRef<any>({});
+  useEffect(() => {
+    navStateRef.current = {
+      viewingPostId,
+      viewingVideoId,
+      isPosting,
+      isNotificationsOpen,
+      isAccountSwitcherOpen,
+      cameraConfig,
+      settingsSection,
+      viewingProfile,
+      viewingStoreId,
+      viewingProductId,
+      messageRecipient,
+      activeTab,
+      storyState,
+      addToast
+    };
+  });
+
+  // Track tab history for back navigation between pages
+  useEffect(() => {
+    if (isPoppingRef.current) return;
+    const stack = tabHistoryStackRef.current;
+    if (stack[stack.length - 1] !== activeTab) {
+      stack.push(activeTab);
+      if (stack.length > 40) stack.shift();
+    }
+  }, [activeTab]);
+
   useEffect(() => {
     let backListener: any;
+    let isMounted = true;
     
     const setupListener = async () => {
       try {
         const { App: CapApp } = await import('@capacitor/app');
-        backListener = await CapApp.addListener('backButton', () => {
-          // 1. If Post detail modal is open
-          if (viewingPostId) {
+        if (!isMounted) return;
+
+        backListener = await CapApp.addListener('backButton', ({ canGoBack }: any) => {
+          const s = navStateRef.current;
+
+          // 1. Stories open
+          if (s.storyState?.activeStoryGroup || s.storyState?.isStudioOpen || s.storyState?.isCreatingNote) {
+            setStoryState({ activeStoryGroup: null, isStudioOpen: false, isCreatingNote: false });
+            window.dispatchEvent(new CustomEvent('aeirmist-story-close'));
+            return;
+          }
+
+          // 2. Post detail modal is open
+          if (s.viewingPostId) {
             setViewingPostId(null);
             return;
           }
-          // 2. If Video modal / detail is open
-          if (viewingVideoId) {
+
+          // 3. Video modal / detail is open
+          if (s.viewingVideoId) {
             setViewingVideoId(null);
             return;
           }
-          // 3. If Create Post studio is open
-          if (isPosting) {
+
+          // 4. Create Post studio is open
+          if (s.isPosting) {
             setIsPosting(false);
             return;
           }
-          // 4. If Notification Center is open
-          if (isNotificationsOpen) {
+
+          // 5. Notification Center is open
+          if (s.isNotificationsOpen) {
             setIsNotificationsOpen(false);
             return;
           }
-          // 5. If Account switcher is open
-          if (isAccountSwitcherOpen) {
+
+          // 6. Account switcher is open
+          if (s.isAccountSwitcherOpen) {
             setIsAccountSwitcherOpen(false);
             return;
           }
-          // 6. If Camera is open
-          if (cameraConfig?.isOpen) {
-            setCameraConfig({ ...cameraConfig, isOpen: false });
+
+          // 7. Camera is open
+          if (s.cameraConfig?.isOpen) {
+            setCameraConfig((prev: any) => prev ? { ...prev, isOpen: false } : null);
             return;
           }
-          // 7. If Settings sub-section is open
-          if (settingsSection) {
+
+          // 8. Settings sub-section is open
+          if (s.settingsSection) {
             setSettingsSection(null);
             return;
           }
-          // 8. If viewing another user's profile
-          if (viewingProfile) {
-            setViewingProfile(null);
-            return;
-          }
-          // 9. If viewing a store or product
-          if (viewingStoreId || viewingProductId) {
+
+          // 9. Viewing a store or product
+          if (s.viewingStoreId || s.viewingProductId) {
             setViewingStoreId(null);
             setViewingProductId(null);
             return;
           }
-          // 10. If in a specific chat in Messenger
-          if (messageRecipient) {
+
+          // 10. Specific chat in Messenger
+          if (s.messageRecipient) {
             setMessageRecipient(null);
             return;
           }
-          // 11. If on any tab other than feed, return to feed
-          if (activeTab !== 'feed') {
+
+          // 11. Viewing another user's profile
+          if (s.viewingProfile) {
+            setViewingProfile(null);
+            return;
+          }
+
+          // 12. If we have browser history entries created by app navigation
+          if (window.history.length > 1 && window.history.state?._appNav) {
+            window.history.back();
+            return;
+          }
+
+          // 13. If user navigated through different tabs, pop back to previous tab
+          if (tabHistoryStackRef.current.length > 1) {
+            tabHistoryStackRef.current.pop(); // Remove current tab
+            const previousTab = tabHistoryStackRef.current[tabHistoryStackRef.current.length - 1] || 'feed';
+            setActiveTab(previousTab);
+            return;
+          }
+
+          // 14. If on any tab other than feed, return to feed
+          if (s.activeTab !== 'feed') {
             setActiveTab('feed');
             return;
           }
 
-          // 12. At root home feed: double back press within 2000ms to exit app
+          // 15. At root home feed: double back press within 2000ms to exit app
           const now = Date.now();
           if (now - lastBackPressRef.current < 2000) {
             CapApp.exitApp();
           } else {
             lastBackPressRef.current = now;
-            addToast?.({
-              title: 'Exit App',
-              message: 'Press back again to exit Aeirmist.',
+            s.addToast?.({
+              title: 'Exit Aeirmist',
+              message: 'Press back again to exit.',
               type: 'info'
             });
           }
@@ -363,25 +432,12 @@ function AppContent() {
     setupListener();
 
     return () => {
+      isMounted = false;
       if (backListener?.remove) {
         backListener.remove();
       }
     };
-  }, [
-    viewingPostId, 
-    viewingVideoId, 
-    isPosting, 
-    isNotificationsOpen, 
-    isAccountSwitcherOpen, 
-    cameraConfig, 
-    settingsSection, 
-    viewingProfile, 
-    viewingStoreId, 
-    viewingProductId, 
-    messageRecipient, 
-    activeTab, 
-    addToast
-  ]);
+  }, []);
 
   React.useEffect(() => {
     const handleNavigate = (e: any) => {
@@ -885,20 +941,28 @@ function AppContent() {
         setIsPosting(poppedState.isPosting);
         setIsNotificationsOpen(poppedState.isNotificationsOpen);
         setIsAccountSwitcherOpen(poppedState.isAccountSwitcherOpen);
+        setSettingsSection(poppedState.settingsSection || null);
         if (poppedState.storyState) {
           setStoryState(poppedState.storyState);
           window.dispatchEvent(new CustomEvent('aeirmist-story-state-restore', { detail: poppedState.storyState }));
+        }
+
+        // Sync tab history stack
+        const restoredTab = poppedState.activeTab === 'notifications' ? 'feed' : poppedState.activeTab;
+        if (restoredTab && tabHistoryStackRef.current[tabHistoryStackRef.current.length - 1] !== restoredTab) {
+          tabHistoryStackRef.current.push(restoredTab);
         }
         
         // Reset popping state asynchronously to accommodate React state update scheduling
         setTimeout(() => {
           isPoppingRef.current = false;
-        }, 0);
+        }, 50);
       } else {
         // Fallback popstate if state doesn't have _appNav (e.g. direct url change)
         const pathInit = getInitialStateFromPath(window.location.pathname);
         setActiveTab(pathInit.tab);
         setIsNotificationsOpen(pathInit.notifs);
+        setSettingsSection(null);
       }
     };
 
