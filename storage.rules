@@ -1,0 +1,80 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // -- PRIMITIVES --
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    
+    // -- PATHS --
+    
+    // Unified User Media Structure
+    match /users/{userId}/{folder}/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
+    }
+    
+    // User profile avatars & covers
+    match /avatars/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+    }
+    
+    match /profiles/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+    }
+    
+    // Feed posts
+    match /posts/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
+    }
+
+    // Wallpapers
+    match /wallpapers/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+    }
+
+    // Vault
+    match /vault/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
+    }
+
+    // Stores & Marketplace
+    match /stores/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+    }
+
+    match /products/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 50 * 1024 * 1024;
+    }
+
+    // Videos
+    match /videos/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 200 * 1024 * 1024;
+    }
+
+    // Stories
+    match /stories/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.resource.size < 100 * 1024 * 1024;
+    }
+
+    // Messenger Media
+    match /chats/{chatId}/{allPaths=**} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // Notes
+    match /notes/{allPaths=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+  }
+}
