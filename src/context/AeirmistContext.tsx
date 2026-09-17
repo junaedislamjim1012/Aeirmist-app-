@@ -192,6 +192,8 @@ interface AeirmistContextType {
   rejectFollowRequest: (requestId: string) => Promise<void>;
   acceptFollowRequest: (requestId: string, fromProfileId: string) => Promise<void>;
   toggleFollow: (targetUid: string, targetProfileData?: any) => Promise<void>;
+  removeFollower: (targetProfileId: string) => Promise<void>;
+  recalculateFollowCounts: (profileId?: string) => Promise<void>;
   isFollowing: (targetUid: string) => boolean;
   isFollowPending: (targetUid: string) => boolean;
   getFollowers: (targetUid: string) => Promise<any[]>;
@@ -4766,12 +4768,22 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const isProfileAlive = (data: any) => {
+    if (!data) return false;
+    if (data.isDeleted === true || data.isBanned === true || data.scheduledForPurge === true) return false;
+    const deadStatuses = ['DELETED', 'BANNED', 'SUSPENDED', 'purged', 'scheduled_for_deletion', 'UNDER_REVIEW'];
+    if (deadStatuses.includes(data.status)) return false;
+    return true;
+  };
+
   const getFollowers = async (targetId: string) => {
     if (!db) return [];
     try {
       const q = query(collection(db, 'profiles'), where('social.following', 'array-contains', targetId));
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      return snap.docs
+        .map(d => ({ ...d.data(), id: d.id }))
+        .filter(p => isProfileAlive(p));
     } catch (e) {
       logger.error("Fetch followers failed", e);
       return [];
@@ -4781,9 +4793,6 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const getFollowing = async (targetId: string) => {
     if (!db) return [];
     try {
-      // Need to fetch profiles whose IDs are in targetId's following array
-      // Because we don't have the target profile here, we should fetch it first if we don't know it,
-      // but if we do, it's easier to just pass the array or fetch the doc.
       const targetDoc = await getDoc(doc(db, 'profiles', targetId));
       if (!targetDoc.exists()) return [];
       const followingIds = targetDoc.data()?.social?.following || [];
@@ -4800,7 +4809,7 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const snap = await getDocs(q);
         allFollowing.push(...snap.docs.map(d => ({ ...d.data(), id: d.id })));
       }
-      return allFollowing;
+      return allFollowing.filter(p => isProfileAlive(p));
     } catch (e) {
       logger.error("Fetch following failed", e);
       return [];
@@ -5009,6 +5018,91 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         message: "Failed to reject follow request — please check your connection and try again",
         type: "warning"
       });
+    }
+  };
+
+  const removeFollower = async (targetProfileId: string) => {
+    if (!db || !profile) return;
+    try {
+      // Optimistic update
+      setProfile((prev: any) => ({
+        ...prev,
+        social: {
+          ...prev?.social,
+          followers: (prev?.social?.followers || []).filter((id: string) => id !== targetProfileId)
+        },
+        followersCount: Math.max(0, (prev?.followersCount || 1) - 1)
+      }));
+
+      const batch = writeBatch(db);
+      // Remove target from my followers
+      batch.update(doc(db, 'profiles', profile.id), {
+        'social.followers': arrayRemove(targetProfileId),
+        followersCount: increment(-1)
+      });
+      // Remove me from target's following
+      batch.update(doc(db, 'profiles', targetProfileId), {
+        'social.following': arrayRemove(profile.id),
+        followingCount: increment(-1)
+      });
+      await batch.commit();
+      addToast({
+        title: "Follower Removed",
+        message: "User was removed from your followers",
+        type: "info"
+      });
+    } catch (e) {
+      logger.error("Remove follower failed", e);
+      addToast({
+        title: "Error",
+        message: "Failed to remove follower — please try again",
+        type: "error"
+      });
+    }
+  };
+
+  const recalculateFollowCounts = async (profileId?: string) => {
+    const targetId = profileId || profile?.id;
+    if (!db || !targetId) return;
+    try {
+      // Get alive followers
+      const followers = await getFollowers(targetId);
+      const aliveFollowerIds = followers.map(f => f.id);
+      
+      // Get target profile doc to get following list
+      const targetDoc = await getDoc(doc(db, 'profiles', targetId));
+      if (!targetDoc.exists()) return;
+      const targetData = targetDoc.data();
+      const rawFollowing = targetData?.social?.following || [];
+
+      // Filter alive following
+      let aliveFollowingIds: string[] = [];
+      if (rawFollowing.length > 0) {
+        const followingProfiles = await getFollowing(targetId);
+        aliveFollowingIds = followingProfiles.map(f => f.id);
+      }
+
+      await updateDoc(doc(db, 'profiles', targetId), {
+        'social.followers': aliveFollowerIds,
+        'social.following': aliveFollowingIds,
+        followersCount: aliveFollowerIds.length,
+        followingCount: aliveFollowingIds.length
+      });
+
+      if (targetId === profile?.id) {
+        setProfile((prev: any) => ({
+          ...prev,
+          social: {
+            ...prev?.social,
+            followers: aliveFollowerIds,
+            following: aliveFollowingIds
+          },
+          followersCount: aliveFollowerIds.length,
+          followingCount: aliveFollowingIds.length
+        }));
+      }
+    } catch (e) {
+      logger.error("Recalculate follow counts failed", e);
     }
   };
 
@@ -5586,6 +5680,8 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     switchProfile,
     syncDatabaseProfile,
     toggleFollow,
+    removeFollower,
+    recalculateFollowCounts,
     isFollowing,
     isFollowPending,
     acceptFollowRequest,
@@ -5705,7 +5801,7 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     featureFlags, updateFeatureFlag, appBranding, updateAppBranding,
     login, loginWithProvider, linkAccountMethod, unlinkAccountMethod, requestDeleteAccount, cancelDeleteAccount, logActivity, pendingLinkEmail, pendingLinkCredential, isScheduledForPurge, loginWithEmail, loginAsGuestSandbox, signupWithEmail, completeSignup, resetPassword, logout,
     refreshProfile, reloadAuthUser,
-    updateProfile, deleteAccount, purgeUser, toggleUserBan, toggleVerification, checkUsernameAvailable, registerUsername, switchProfile, toggleFollow,
+    updateProfile, deleteAccount, purgeUser, toggleUserBan, toggleVerification, checkUsernameAvailable, registerUsername, switchProfile, toggleFollow, removeFollower, recalculateFollowCounts,
     isFollowing, isFollowPending, acceptFollowRequest, rejectFollowRequest, getFollowers, getFollowing, searchUsers, globalSearch, toggleLike, toggleBookmark, createPost, editPost, deletePost, archivePost, sendMessage,
     markAsRead, updateSeenStatus, setTypingStatus, goOnline, goOffline,
     onlineUsers, activeCall, callStream, remoteStream, startCall, acceptCall, rejectCall, endCall, createNotification, submitReport, toggleNotification, setConversationTheme, updateConversationThemeSettings, toggleVanishMode, toggleBlockUser, toggleRestrictUser, deleteConversation, toggleCloseFriend, isCloseFriend, isBlocked, isRestricted,

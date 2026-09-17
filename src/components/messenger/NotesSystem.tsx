@@ -787,7 +787,7 @@ export const NotesSystem = ({ chats, onChatSelect, onReplyNote }: { chats: any[]
             participants: [profile?.id, otherId]
           };
 
-          const isOnline = onlineUsers.has(otherId);
+          const isOnline = !!onlineUsers?.has?.(otherId);
           const hasSeen = friendNote.seenBy?.some((s: any) => s.userId === profile?.id);
           const isCloseFriendsNote = friendNote.audience === 'closeFriends';
           const isPlayingThis = isPlayingMusic && playingNoteId === friendNote.id;
@@ -1287,7 +1287,7 @@ export const NotesSystem = ({ chats, onChatSelect, onReplyNote }: { chats: any[]
           const chat = selectedFriendNote.chat;
           const authorName = chat.name || friendNote.userName || 'User';
           const authorFirstName = authorName.split(' ')[0] || 'User';
-          const isOnline = onlineUsers.has(friendNote.authorId);
+          const isOnline = !!onlineUsers?.has?.(friendNote.authorId);
 
           const parts = friendNote.music ? friendNote.music.split(' - ') : [];
           const trackTitle = parts[0] || friendNote.music || '';

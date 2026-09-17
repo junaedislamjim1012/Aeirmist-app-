@@ -214,7 +214,7 @@ const LiveParticipantPresenceDot = ({ participantId }: { participantId: string }
           setShowPresence(false);
           return;
         }
-        const isOnline = onlineUsers.has(participantId);
+        const isOnline = !!onlineUsers?.has?.(participantId);
         const hasShowActivity = data.privacySettings?.showActivity !== false;
         const isOnlineStatusOn = data.messagingSettings?.onlineStatus !== false;
         setShowPresence(isOnline && hasShowActivity && isOnlineStatusOn);
@@ -284,7 +284,7 @@ const LiveParticipantSubDetails = ({ participantId, chatId }: { participantId: s
     };
   }, [db, participantId, chatId]);
 
-  const isOnline = onlineUsers.has(participantId);
+  const isOnline = !!onlineUsers?.has?.(participantId);
 
   let presenceText = '';
   if (showPresence) {
@@ -674,7 +674,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           isVanishMode: !!data.isVanishMode,
           theme: data.theme || 'neural',
           themeSettings: data.themeSettings,
-          online: onlineUsers.has(otherParticipantId),
+          online: !!onlineUsers?.has?.(otherParticipantId),
           lastMessageSenderId: lastSenderId,
           lastMessageMood: data.lastMessage?.mood,
           updatedAtMs: data.updatedAt?.toMillis?.() || Date.now()
@@ -768,7 +768,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
         lastMessage: 'Tap to chat',
         time: '',
         unread: false,
-        online: onlineUsers.has(targetId),
+        online: !!onlineUsers?.has?.(targetId),
         participants: [user!.uid, targetUid].filter(Boolean).sort(),
         profileIds: profileIds,
         isTemporary: true
@@ -821,19 +821,19 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       list = chats.filter(c => c.isArchived).map(c => ({
         ...c,
         time: formatShortTimestamp(c.updatedAt),
-        online: onlineUsers.has(c.otherParticipantId || '')
+        online: !!onlineUsers?.has?.(c.otherParticipantId || '')
       }));
     } else if (activeFilter === 'requests') {
       list = requestChats.map(c => ({
          ...c,
          time: formatShortTimestamp(c.updatedAt),
-         online: onlineUsers.has(c.otherParticipantId || '')
+         online: !!onlineUsers?.has?.(c.otherParticipantId || '')
       }));
     } else {
       list = mainChats.filter(c => !c.isArchived).map(c => ({
          ...c,
          time: formatShortTimestamp(c.updatedAt),
-         online: onlineUsers.has(c.otherParticipantId || '')
+         online: !!onlineUsers?.has?.(c.otherParticipantId || '')
       }));
 
       if (activeFilter === 'unread') list = list.filter(c => c.unread);
@@ -1389,7 +1389,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
 
                   if (searchTab === 'all' || searchTab === 'groups' || searchTab === 'messages' || searchTab === 'media') {
                     chatMatches.forEach(c => {
-                      const isOnline = onlineUsers.has(c.otherParticipantId || '');
+                      const isOnline = !!onlineUsers?.has?.(c.otherParticipantId || '');
                       const isGroup = c.isGroup || (c.participants?.length || 0) > 2;
                       
                       if (searchTab === 'groups' && !isGroup) return;
@@ -1432,7 +1432,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
 
                   if (searchTab === 'all' || searchTab === 'people') {
                     searchResults.forEach(item => {
-                      const isOnline = onlineUsers.has(item.id);
+                      const isOnline = !!onlineUsers?.has?.(item.id);
                       displayList.push(
                         <div 
                           key={`person-${item.id}`}
@@ -1751,7 +1751,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                 </div>
               )}
               {filteredChats.map((chat) => {
-                const isOnline = onlineUsers.has(chat.otherParticipantId);
+                const isOnline = !!onlineUsers?.has?.(chat.otherParticipantId);
                 const isSelected = currentChat?.id === chat.id;
                 return (
                   <div 
@@ -2712,7 +2712,7 @@ const ChatWindow = ({
               userId={!isPrivateSpace && !chat?.isGroup && !isOtherUnavailable ? chat.otherParticipantId : undefined}
               className="group-hover:border-aeirmist-cyan transition-colors"
             />
-            {!isPrivateSpace && !chat?.isGroup && !isOtherUnavailable && onlineUsers.has(chat.otherParticipantId || '') && showTheirPresence && (
+            {!isPrivateSpace && !chat?.isGroup && !isOtherUnavailable && !!onlineUsers?.has?.(chat.otherParticipantId || '') && showTheirPresence && (
               <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-aeirmist-lime rounded-full border-2 border-aeirmist-bg z-10" />
             )}
           </div>
@@ -2741,9 +2741,9 @@ const ChatWindow = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <p className={`text-[8px] uppercase tracking-widest font-bold ${onlineUsers.has(chat.otherParticipantId || '') && otherProfile?.messagingSettings?.onlineStatus !== false && profile?.messagingSettings?.onlineStatus !== false ? 'text-aeirmist-lime' : 'text-white/30'} truncate`}>
+                  <p className={`text-[8px] uppercase tracking-widest font-bold ${!!onlineUsers?.has?.(chat.otherParticipantId || '') && otherProfile?.messagingSettings?.onlineStatus !== false && profile?.messagingSettings?.onlineStatus !== false ? 'text-aeirmist-lime' : 'text-white/30'} truncate`}>
                     {formatActiveStatus(
-                      onlineUsers.has(chat.otherParticipantId || '') && profile?.messagingSettings?.onlineStatus !== false, 
+                      !!onlineUsers?.has?.(chat.otherParticipantId || '') && profile?.messagingSettings?.onlineStatus !== false, 
                       otherProfile?.lastSeen, 
                       otherProfile?.messagingSettings?.onlineStatus === false || profile?.messagingSettings?.onlineStatus === false
                     )}
