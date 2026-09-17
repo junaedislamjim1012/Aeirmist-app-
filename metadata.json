@@ -1,0 +1,6 @@
+{
+  "name": "Aeirmist",
+  "description": "Aeirmist - Next generation social platform native Android application powered by Capacitor",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
