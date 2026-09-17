@@ -6,11 +6,6 @@ import {
   Search, 
   Sparkles, 
   X, 
-  LayoutGrid, 
-  Clock, 
-  ShieldCheck,
-  Zap,
-  Filter,
   CheckCircle2,
   CheckCheck,
   Brain,
@@ -25,7 +20,7 @@ import {
   RotateCcw,
   Check,
   AlertTriangle,
-  Compass
+  ShieldCheck
 } from 'lucide-react';
 import { NotificationItem } from './NotificationItem';
 import type { Notification } from '../../types/notifications';
@@ -65,7 +60,6 @@ interface NotificationCenterProps {
 const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace' | 'videos' | 'stories' | 'system' => {
   const typeStr = String(type).toLowerCase();
   
-  // Messages Category
   if ([
     'message', 'message_media', 'message_voice', 'message_video', 
     'call', 'call_missed', 'video_call_missed', 'store_message', 'message_received'
@@ -73,7 +67,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'messages';
   }
   
-  // Marketplace Category
   if ([
     'store_follow', 'review_new', 'store_review', 'product_like', 'product_save', 
     'product_report', 'stock_low', 'product_comment', 'marketplace'
@@ -81,7 +74,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'marketplace';
   }
   
-  // Videos Category
   if ([
     'video_milestone', 'video_comment', 'video_comment_reply', 
     'video_share', 'video_save', 'video_follower'
@@ -89,7 +81,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'videos';
   }
   
-  // Stories Category
   if ([
     'story_reply', 'story_react', 'story_mention', 'story_share', 
     'ngl_story_reply', 'ngl_reply', 'story'
@@ -97,7 +88,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'stories';
   }
   
-  // System Category
   if ([
     'security', 'system', 'verification', 'system_verification', 
     'username_change', 'password_change', 'security_login', 'profile_update', 
@@ -106,22 +96,8 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'system';
   }
   
-  // Social Category
   return 'social';
 };
-
-// Meta-style Filter Tabs configuration
-const tabsConfig = [
-  { id: 'all', label: 'All', icon: <LayoutGrid size={12} /> },
-  { id: 'unread', label: 'Unread', icon: <CheckCircle2 size={12} /> },
-  { id: 'social', label: 'Social', icon: <UserPlus size={12} /> },
-  { id: 'marketplace', label: 'Market', icon: <ShoppingBag size={12} /> },
-  { id: 'videos', label: 'Videos', icon: <Video size={12} /> },
-  { id: 'stories', label: 'Stories', icon: <Tv size={12} /> },
-  { id: 'system', label: 'System', icon: <ShieldCheck size={12} /> }
-] as const;
-
-type ActiveTabsType = 'all' | 'unread' | 'social' | 'marketplace' | 'videos' | 'stories' | 'system';
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({ 
   onClose, 
@@ -131,7 +107,6 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   onUserClick
 }) => {
   const centerRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTabsType>('all');
   const [notifications, setNotifications] = useState<any[]>([]);
   const { db, user, profile, canWrite, acceptFollowRequest, rejectFollowRequest, toggleFollow, isFollowing, addToast } = useAeirmist();
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
@@ -162,32 +137,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   });
 
-  // Calculate unread counts for each filter pill
-  const getUnreadCounts = () => {
-    const counts: Record<string, number> = {
-      all: 0,
-      unread: 0,
-      social: 0,
-      messages: 0,
-      marketplace: 0,
-      videos: 0,
-      stories: 0,
-      system: 0
-    };
-    notifications.forEach(n => {
-      if (!n.isRead && !n.read) {
-        counts.all++;
-        counts.unread++;
-        const cat = getCategoryForType(n.type);
-        if (counts[cat] !== undefined) {
-          counts[cat]++;
-        }
-      }
-    });
-    return counts;
-  };
-
-  const unreadCounts = getUnreadCounts();
+  // Calculate total unread count
+  const unreadCount = notifications.filter(n => !n.isRead && !n.read).length;
 
   const handleAction = async (notifId: string, action: string) => {
     const notif = notifications.find(n => n.id === notifId);
@@ -318,8 +269,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     };
   }, [onClose]);
 
-  // Filter logic including tab selection, query strings, and muted users
-  const getFilteredNotifications = () => {
+  // Serial list: Filter out muted and hidden types, and order serially by time
+  const getSerialNotifications = () => {
     return notifications.filter(n => {
       // 1. Muted users check
       const username = n.user?.username || n.user?.name || '';
@@ -328,15 +279,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       // 2. Hidden type rules check
       if (hiddenTypes.includes(n.type)) return false;
 
-      // 3. Tab matching check
-      if (activeTab === 'unread') {
-        if (n.read || n.isRead) return false;
-      } else if (activeTab !== 'all') {
-        const cat = getCategoryForType(n.type);
-        if (cat !== activeTab) return false;
-      }
-
-      // 4. Search query filter
+      // 3. Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const content = (n.message || n.content || '').toLowerCase();
@@ -345,26 +288,10 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       }
 
       return true;
-    });
+    }).sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
   };
 
-  const filteredNotifications = getFilteredNotifications();
-
-  // Meta Grouping: "New" (unread or within last 24h) vs "Earlier"
-  const nowMs = Date.now();
-  const dayMs = 24 * 60 * 60 * 1000;
-
-  const newNotifications = filteredNotifications.filter(n => {
-    const isUnread = !(n.read || n.isRead);
-    const isToday = (nowMs - n.timestampMs) < dayMs;
-    return isUnread || isToday;
-  });
-
-  const earlierNotifications = filteredNotifications.filter(n => {
-    const isUnread = !(n.read || n.isRead);
-    const isToday = (nowMs - n.timestampMs) < dayMs;
-    return !isUnread && !isToday;
-  });
+  const serialNotifications = getSerialNotifications();
 
   const markAllRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true, isRead: true })));
@@ -467,22 +394,22 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: '100%' }}
         transition={{ type: 'spring', damping: 26, stiffness: 240 }}
-        className="fixed inset-y-0 right-0 w-full sm:w-[480px] md:w-[460px] z-[1000] bg-[#18191A] border-l border-white/[0.08] shadow-[-20px_0_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden text-[#E4E6EB]"
+        className="fixed inset-y-0 right-0 w-full sm:w-[480px] md:w-[460px] z-[1000] bg-[#121316] border-l border-white/[0.08] shadow-[-20px_0_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden text-[#E4E6EB]"
       >
-        {/* Meta Header */}
-        <header className="px-4 py-3.5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] md:pt-3.5 border-b border-white/[0.08] bg-[#18191A] relative z-10">
+        {/* Header */}
+        <header className="px-4 py-3.5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] md:pt-3.5 border-b border-white/[0.08] bg-[#18191C]/90 backdrop-blur-xl relative z-10">
           <div className="flex items-center justify-between gap-3 min-w-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <h2 className="text-xl font-bold tracking-tight text-white leading-none">Notifications</h2>
-              {unreadCounts.all > 0 && (
+              {unreadCount > 0 && (
                 <span className="px-2 py-0.5 rounded-full bg-[#1877F2] text-white text-xs font-bold shadow-sm">
-                  {unreadCounts.all}
+                  {unreadCount}
                 </span>
               )}
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {unreadCounts.all > 0 && (
+              {unreadCount > 0 && (
                 <button 
                   type="button"
                   onClick={markAllRead} 
@@ -497,7 +424,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               <button 
                 type="button"
                 onClick={onClose} 
-                className="w-8 h-8 rounded-full bg-[#3A3B3C] hover:bg-[#4E4F50] text-[#E4E6EB] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                className="w-8 h-8 rounded-full bg-[#2A2B30] hover:bg-[#3A3B40] text-[#E4E6EB] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
                 title="Close"
               >
                 <X size={17} />
@@ -506,109 +433,33 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           </div>
         </header>
 
-        {/* Meta Filter Pills Bar (User highlighted section) */}
-        <div className="px-3.5 py-2.5 bg-[#18191A] border-b border-white/[0.08] relative shrink-0">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-            {tabsConfig.map(tab => {
-              const count = unreadCounts[tab.id] || 0;
-              const isActive = activeTab === tab.id;
-              return (
-                <button 
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold relative transition-all duration-150 flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                    isActive 
-                      ? 'bg-[#0064E0] text-white shadow-sm shadow-[#0064E0]/30 font-bold' 
-                      : 'bg-[#242526] text-[#B0B3B8] hover:text-white hover:bg-[#3A3B3C] border border-white/[0.06]'
-                  }`}
-                >
-                  {tab.icon}
-                  <span>{tab.label}</span>
-                  {count > 0 && (
-                    <span className={`px-1.5 py-0.2 min-w-[17px] text-center rounded-full text-[10px] font-bold leading-tight ${
-                      isActive ? 'bg-white/25 text-white' : 'bg-[#E41E3F] text-white shadow-sm'
-                    }`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Notifications Scroll List */}
-        <div className="flex-1 overflow-y-auto no-scrollbar p-2 sm:p-2.5 space-y-3 bg-[#18191A]">
-          {filteredNotifications.length > 0 ? (
-            <>
-              {/* "New" Section (Meta trademark) */}
-              {newNotifications.length > 0 && (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between px-3 pt-1.5 pb-1">
-                    <h3 className="text-xs font-bold text-white tracking-wide uppercase">New</h3>
-                    {newNotifications.some(n => !n.read && !n.isRead) && (
-                      <span className="text-[11px] font-semibold text-[#4599FF]">
-                        {newNotifications.filter(n => !n.read && !n.isRead).length} unread
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1">
-                    {newNotifications.map((notif) => (
-                      <NotificationItem 
-                        key={notif.id} 
-                        notification={notif} 
-                        onMarkRead={() => markRead(notif.id)} 
-                        onDelete={deleteNotification}
-                        onHideType={handleHideType}
-                        onMuteUser={handleMuteUser}
-                        onViewSource={handleViewSource}
-                        onAction={handleAction}
-                        isProcessing={processingIds.has(notif.id)}
-                        onUserClick={onUserClick}
-                        isFollowingUser={isFollowing ? isFollowing(notif.fromUserId || notif.user?.id) : false}
-                        onFollowToggle={handleFollowToggle}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* "Earlier" Section (Meta trademark) */}
-              {earlierNotifications.length > 0 && (
-                <div className="space-y-1 pt-2">
-                  <div className="px-3 pt-2 pb-1">
-                    <h3 className="text-xs font-bold text-white tracking-wide uppercase">Earlier</h3>
-                  </div>
-                  <div className="space-y-1">
-                    {earlierNotifications.map((notif) => (
-                      <NotificationItem 
-                        key={notif.id} 
-                        notification={notif} 
-                        onMarkRead={() => markRead(notif.id)} 
-                        onDelete={deleteNotification}
-                        onHideType={handleHideType}
-                        onMuteUser={handleMuteUser}
-                        onViewSource={handleViewSource}
-                        onAction={handleAction}
-                        isProcessing={processingIds.has(notif.id)}
-                        onUserClick={onUserClick}
-                        isFollowingUser={isFollowing ? isFollowing(notif.fromUserId || notif.user?.id) : false}
-                        onFollowToggle={handleFollowToggle}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+        {/* Notifications Serial Scroll List (No Filter Bar, Pure Serial Flow) */}
+        <div className="flex-1 overflow-y-auto no-scrollbar p-2 sm:p-3 space-y-2 bg-[#121316]">
+          {serialNotifications.length > 0 ? (
+            serialNotifications.map((notif) => (
+              <NotificationItem 
+                key={notif.id} 
+                notification={notif} 
+                onMarkRead={() => markRead(notif.id)} 
+                onDelete={deleteNotification}
+                onHideType={handleHideType}
+                onMuteUser={handleMuteUser}
+                onViewSource={handleViewSource}
+                onAction={handleAction}
+                isProcessing={processingIds.has(notif.id)}
+                onUserClick={onUserClick}
+                isFollowingUser={isFollowing ? isFollowing(notif.fromUserId || notif.user?.id) : false}
+                onFollowToggle={handleFollowToggle}
+              />
+            ))
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-center py-24 px-6">
-              <div className="w-16 h-16 rounded-full bg-[#242526] border border-white/10 flex items-center justify-center mb-4 text-[#1877F2]">
+              <div className="w-16 h-16 rounded-full bg-[#1E1F24] border border-white/10 flex items-center justify-center mb-4 text-[#1877F2]">
                 <Bell size={28} />
               </div>
               <p className="text-base font-bold text-white mb-1">No notifications</p>
-              <p className="text-xs text-[#B0B3B8] max-w-xs leading-relaxed">
-                You have no {activeTab !== 'all' ? `${activeTab} ` : ''}notifications at the moment.
+              <p className="text-xs text-[#8A8D91] max-w-xs leading-relaxed">
+                When you receive likes, comments, or follow requests, they will appear here serially.
               </p>
             </div>
           )}
