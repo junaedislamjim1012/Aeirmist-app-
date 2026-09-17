@@ -3882,6 +3882,7 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           profileIdsSet.add(p.id);
           const d = p.data();
           if (d.username) usernamesSet.add(d.username.toLowerCase());
+          if (d.usernameNormalized) usernamesSet.add(d.usernameNormalized.toLowerCase());
         });
       } catch (e) {}
 
@@ -3893,6 +3894,7 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           profileIdsSet.add(p.id);
           const d = p.data();
           if (d.username) usernamesSet.add(d.username.toLowerCase());
+          if (d.usernameNormalized) usernamesSet.add(d.usernameNormalized.toLowerCase());
         });
       } catch (e) {}
 
@@ -3903,11 +3905,34 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           if (pDoc.exists()) {
             const d = pDoc.data();
             if (d.username) usernamesSet.add(d.username.toLowerCase());
+            if (d.usernameNormalized) usernamesSet.add(d.usernameNormalized.toLowerCase());
           }
         } catch (e) {}
       }
 
       if (profile?.username) usernamesSet.add(profile.username.toLowerCase());
+
+      // Also gather usernames from the users collection (important when profile is missing)
+      try {
+        const userDocSnap = await getDoc(doc(db, 'users', uid));
+        if (userDocSnap.exists()) {
+          const uData = userDocSnap.data();
+          if (uData.username) usernamesSet.add(uData.username.toLowerCase());
+          if (uData.usernameNormalized) usernamesSet.add(uData.usernameNormalized.toLowerCase());
+        }
+      } catch (e) {}
+
+      // Reverse-scan the usernames collection to find any lock owned by this UID
+      try {
+        const allUsernamesSnap = await getDocs(collection(db, 'usernames'));
+        allUsernamesSnap.forEach(d => {
+          const lockData = d.data();
+          const lockOwner = lockData.ownerUid || lockData.uid;
+          if (lockOwner === uid) {
+            usernamesSet.add(d.id.toLowerCase());
+          }
+        });
+      } catch (e) {}
 
       const profileIds = Array.from(profileIdsSet);
       const usernames = Array.from(usernamesSet);
@@ -4506,43 +4531,71 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (isSafeMode || !db) return { available: true };
 
     try {
-      // 1. Lock document check
+      // 1. Lock document check — verify the owner is still alive
       const uLockSnap = await getDoc(doc(db, 'usernames', norm));
       if (uLockSnap.exists()) {
         const lockData = uLockSnap.data();
         const lockOwner = lockData.ownerUid || lockData.uid;
-        if (!excludeUid || lockOwner !== excludeUid) {
+
+        // If the lock belongs to the caller, skip it
+        if (excludeUid && lockOwner === excludeUid) {
+          /* own lock — fall through */
+        } else if (lockOwner) {
+          // Verify the owner actually still exists and is active
+          const ownerUserSnap = await getDoc(doc(db, 'users', lockOwner));
+          const ownerProfileSnap = await getDoc(doc(db, 'profiles', `profile_${lockOwner}`));
+
+          const ownerUserData = ownerUserSnap.exists() ? ownerUserSnap.data() : null;
+          const ownerProfileData = ownerProfileSnap.exists() ? ownerProfileSnap.data() : null;
+
+          const isUserDead = !ownerUserSnap.exists() || ownerUserData?.status === 'DELETED' || ownerUserData?.status === 'purged' || ownerUserData?.isDeleted === true;
+          const isProfileDead = !ownerProfileSnap.exists() || ownerProfileData?.status === 'DELETED' || ownerProfileData?.status === 'purged' || ownerProfileData?.isDeleted === true;
+
+          if (isUserDead && isProfileDead) {
+            // Owner is gone — auto-release the stale lock
+            logger.info(`[checkUsernameAvailable] Auto-releasing orphan username lock "${norm}" (owner ${lockOwner} no longer exists).`);
+            try { await deleteDoc(doc(db, 'usernames', norm)); } catch (delErr) { logger.warn('[checkUsernameAvailable] Could not auto-release lock:', delErr); }
+          } else {
+            return { available: false };
+          }
+        } else {
           return { available: false };
         }
       }
 
-      // 2. Query users where usernameNormalized == norm
+      // 2. Query users where usernameNormalized == norm (skip deleted/purged)
       const q1 = query(collection(db, 'users'), where('usernameNormalized', '==', norm), limit(1));
       const s1 = await getDocs(q1);
       if (!s1.empty) {
         const uDoc = s1.docs[0];
-        if (!excludeUid || uDoc.id !== excludeUid) {
+        const uData = uDoc.data();
+        const isDeleted = uData.status === 'DELETED' || uData.status === 'purged' || uData.isDeleted === true;
+        if (!isDeleted && (!excludeUid || uDoc.id !== excludeUid)) {
           return { available: false };
         }
       }
 
-      // 3. Query users where username == norm
+      // 3. Query users where username == norm (skip deleted/purged)
       const q2 = query(collection(db, 'users'), where('username', '==', norm), limit(1));
       const s2 = await getDocs(q2);
       if (!s2.empty) {
         const uDoc = s2.docs[0];
-        if (!excludeUid || uDoc.id !== excludeUid) {
+        const uData = uDoc.data();
+        const isDeleted = uData.status === 'DELETED' || uData.status === 'purged' || uData.isDeleted === true;
+        if (!isDeleted && (!excludeUid || uDoc.id !== excludeUid)) {
           return { available: false };
         }
       }
 
-      // 4. Query profiles where usernameNormalized == norm
+      // 4. Query profiles where usernameNormalized == norm (skip deleted/purged)
       const q3 = query(collection(db, 'profiles'), where('usernameNormalized', '==', norm), limit(1));
       const s3 = await getDocs(q3);
       if (!s3.empty) {
         const pDoc = s3.docs[0];
-        const pOwner = pDoc.data().ownerUid || pDoc.data().uid;
-        if (!excludeUid || pOwner !== excludeUid) {
+        const pData = pDoc.data();
+        const pOwner = pData.ownerUid || pData.uid;
+        const isDeleted = pData.status === 'DELETED' || pData.status === 'purged' || pData.isDeleted === true;
+        if (!isDeleted && (!excludeUid || pOwner !== excludeUid)) {
           return { available: false };
         }
       }
