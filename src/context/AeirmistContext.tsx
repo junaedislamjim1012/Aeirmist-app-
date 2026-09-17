@@ -269,6 +269,7 @@ interface AeirmistContextType {
   isNavHidden: boolean;
   setIsNavHidden: (val: boolean) => void;
   suggestedUsers: any[];
+  allProfiles: any[];
   dismissSuggestion: (userId: string) => void;
   getUserInterests: () => string[];
   saveUserInterests: (interests: string[]) => void;

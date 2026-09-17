@@ -197,11 +197,13 @@ export const NotesSystem = ({ chats, onChatSelect, onReplyNote }: { chats: any[]
   const { user, profile, onlineUsers, setCameraConfig, uploadMedia, db, addToast, toggleCloseFriend, isCloseFriend, searchUsers, sendMessage } = useAeirmist();
   
   // Extract participant IDs to sync notes for active chat members
-  const chatOtherParticipantIds = chats.map(chat => {
-    return chat.profileIds?.find((id: string) => id !== profile?.id) || 
+  const chatOtherParticipantIds = (chats || []).map(chat => {
+    if (!chat) return '';
+    return chat.otherParticipantId || 
+           chat.profileIds?.find((id: string) => id !== profile?.id) || 
            chat.participants?.find((id: string) => id !== profile?.id) || 
-           chat.id.replace(profile?.id || '', '').replace('_', '');
-  }).filter(Boolean);
+           (typeof chat.id === 'string' ? chat.id.replace(profile?.id || '', '').replace('_', '') : '');
+  }).filter((id): id is string => Boolean(id && typeof id === 'string' && id.trim()));
 
   const { notes, createNote, deleteNote, activeStories, loading: notesLoading } = useInboxData(chatOtherParticipantIds);
   
@@ -369,12 +371,13 @@ export const NotesSystem = ({ chats, onChatSelect, onReplyNote }: { chats: any[]
   const candidateUsers = React.useMemo(() => {
     const map = new Map<string, { id: string; name: string; photo?: string; username?: string }>();
     
-    chats.forEach(chat => {
+    (chats || []).forEach(chat => {
+      if (!chat) return;
       const otherId = chat.otherParticipantId || 
                       chat.profileIds?.find((id: string) => id !== profile?.id) || 
                       chat.participants?.find((id: string) => id !== profile?.id) || 
-                      chat.id.replace(profile?.id || '', '').replace('_', '');
-      if (otherId && otherId !== profile?.id) {
+                      (typeof chat.id === 'string' ? chat.id.replace(profile?.id || '', '').replace('_', '') : '');
+      if (otherId && typeof otherId === 'string' && otherId.trim() && otherId !== profile?.id) {
         map.set(otherId, {
           id: otherId,
           name: chat.name || chat.displayName || 'User',

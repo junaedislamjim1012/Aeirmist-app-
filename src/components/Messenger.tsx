@@ -111,8 +111,8 @@ const LiveParticipantAvatar = ({
   const [isDeleted, setIsDeleted] = useState(false);
 
   useEffect(() => {
-    if (!db || !participantId) return;
-    const unsub = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
+    const unsub = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.isDeleted === true || data.status === 'deleted') {
@@ -156,10 +156,10 @@ export const LiveParticipantName = ({ participantId, fallbackName, className = "
   const [isDeleted, setIsDeleted] = useState(false);
 
   useEffect(() => {
-    if (!db || !participantId) return;
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
     
     // Listen for profile changes
-    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.isDeleted === true || data.status === 'deleted') {
@@ -178,8 +178,8 @@ export const LiveParticipantName = ({ participantId, fallbackName, className = "
 
     // Listen for shared nickname changes
     let unsubNickname: any;
-    if (db && chatId) {
-        unsubNickname = onSnapshot(doc(db, 'chat_settings', chatId), (docSnap) => {
+    if (db && chatId && typeof chatId === 'string' && chatId.trim()) {
+        unsubNickname = onSnapshot(doc(db, 'chat_settings', chatId.trim()), (docSnap) => {
             if (docSnap.exists()) {
                 const nicks = docSnap.data().nicknames || {};
                 setNickname(nicks[participantId] || '');
@@ -205,9 +205,9 @@ const LiveParticipantPresenceDot = ({ participantId }: { participantId: string }
   const [showPresence, setShowPresence] = useState(false);
 
   useEffect(() => {
-    if (!db || !participantId) return;
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
     
-    const unsub = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    const unsub = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.isDeleted === true || data.status === 'deleted') {
@@ -246,9 +246,9 @@ const LiveParticipantSubDetails = ({ participantId, chatId }: { participantId: s
   const myOnlineStatusOn = profile?.messagingSettings?.onlineStatus !== false;
 
   useEffect(() => {
-    if (!db || !participantId) return;
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
 
-    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setUsername(data.username || '');
@@ -258,29 +258,32 @@ const LiveParticipantSubDetails = ({ participantId, chatId }: { participantId: s
       }
     });
 
-    const indicatorId = `${chatId}_${participantId}`;
-    const unsubTyping = onSnapshot(doc(db, 'typing_indicators', indicatorId), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.updatedAt) {
-          try {
-            const date = typeof data.updatedAt.toDate === 'function' ? data.updatedAt.toDate() : new Date(data.updatedAt);
-            const isCurrentlyTyping = (Date.now() - date.getTime()) < 4000;
-            setIsTyping(isCurrentlyTyping);
-          } catch (e) {
+    let unsubTyping: (() => void) | undefined;
+    if (chatId && typeof chatId === 'string' && chatId.trim()) {
+      const indicatorId = `${chatId.trim()}_${participantId.trim()}`;
+      unsubTyping = onSnapshot(doc(db, 'typing_indicators', indicatorId), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.updatedAt) {
+            try {
+              const date = typeof data.updatedAt.toDate === 'function' ? data.updatedAt.toDate() : new Date(data.updatedAt);
+              const isCurrentlyTyping = (Date.now() - date.getTime()) < 4000;
+              setIsTyping(isCurrentlyTyping);
+            } catch (e) {
+              setIsTyping(false);
+            }
+          } else {
             setIsTyping(false);
           }
         } else {
           setIsTyping(false);
         }
-      } else {
-        setIsTyping(false);
-      }
-    });
+      });
+    }
 
     return () => {
       unsubProfile();
-      unsubTyping();
+      if (unsubTyping) unsubTyping();
     };
   }, [db, participantId, chatId]);
 
@@ -332,8 +335,8 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
     sendMessage, 
     uploadMedia, 
     mediaSettings,
-    allProfiles,
-    suggestedUsers,
+    allProfiles = [],
+    suggestedUsers = [],
     localAvatarURL,
     toggleNotification,
     deleteConversation,
@@ -1058,7 +1061,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                                       if (existingChat) {
                                         handleChatSelect(existingChat);
                                       } else {
-                                        const usr = allProfiles.find(p => p.id === item.id);
+                                        const usr = allProfiles?.find?.(p => p.id === item.id);
                                         if (usr) handleUserClick(usr);
                                       }
                                     }
