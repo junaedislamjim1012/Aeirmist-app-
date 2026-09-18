@@ -498,14 +498,28 @@ class MessagingService {
       if (!val) return 0;
       if (typeof val.toMillis === 'function') return val.toMillis();
       if (typeof val.seconds === 'number') return val.seconds * 1000;
-      if (typeof val === 'number') return val;
+      if (typeof val === 'number' && val > 0) return val;
       if (val instanceof Date) return val.getTime();
       try {
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? 0 : d.getTime();
+        const parsed = Date.parse(val);
+        return isNaN(parsed) ? 0 : parsed;
       } catch (e) {
         return 0;
       }
+    };
+
+    const extractMsgTimestampMs = (data: any): number => {
+      if (data.createdAt?.toMillis) return data.createdAt.toMillis();
+      if (data.timestamp?.toMillis) return data.timestamp.toMillis();
+      if (typeof data.timestampMs === 'number' && data.timestampMs > 0) return data.timestampMs;
+      if (typeof data.clientSentAt === 'number' && data.clientSentAt > 0) return data.clientSentAt;
+      if (data.createdAt instanceof Date) return data.createdAt.getTime();
+      if (data.timestamp instanceof Date) return data.timestamp.getTime();
+      if (typeof data.createdAt?.seconds === 'number') return data.createdAt.seconds * 1000;
+      if (typeof data.timestamp?.seconds === 'number') return data.timestamp.seconds * 1000;
+      if (typeof data.createdAt === 'number' && data.createdAt > 0) return data.createdAt;
+      if (typeof data.timestamp === 'number' && data.timestamp > 0) return data.timestamp;
+      return Date.now();
     };
 
     const otherLastRead = parseTimestampMs(chatData?.lastRead?.[otherParticipantId || '']);
@@ -524,18 +538,10 @@ class MessagingService {
       const messages = snapshot.docs
         .map(doc => {
           const data = doc.data({ serverTimestamps: 'estimate' });
-          const date = data.createdAt?.toDate?.() || data.timestamp?.toDate?.() || new Date();
-          const timestampMs = data.createdAt?.toMillis?.() || data.timestamp?.toMillis?.() || Date.now();
+          const timestampMs = extractMsgTimestampMs(data);
+          const date = new Date(timestampMs);
           
           const isSeenVal = data.isSeen || (data.senderId === currentProfileId && timestampMs <= otherLastRead);
-          logger.info(`[MessagingService DEBUG] isSeen computation:`, {
-            messageId: doc.id,
-            timestampMs,
-            otherLastRead,
-            otherParticipantId,
-            isSeen: isSeenVal,
-            text: data.text
-          });
 
           return {
             ...data,
@@ -544,7 +550,7 @@ class MessagingService {
             timestampMs,
             isSeen: isSeenVal,
             isDelivered: data.isDelivered || (data.senderId === currentProfileId && timestampMs <= otherLastDelivered),
-            status: data.status || (data.timestamp ? 'sent' : 'sending')
+            status: data.status || 'sent'
           } as Message;
         })
         .filter(m => {
@@ -560,7 +566,9 @@ class MessagingService {
           return true;
         });
       
-      const reversed = messages.reverse();
+      // Sort oldest to newest (ascending chronological sequence)
+      messages.sort((a, b) => (a.timestampMs || 0) - (b.timestampMs || 0));
+      const reversed = messages;
 
       // 2. Persist to Cache (Async)
       try {

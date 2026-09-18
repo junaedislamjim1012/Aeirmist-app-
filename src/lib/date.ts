@@ -1,5 +1,35 @@
 import { Timestamp } from 'firebase/firestore';
 
+const toDateSafe = (timestamp: any): Date | null => {
+  if (!timestamp) return null;
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  if (timestamp instanceof Date) return isNaN(timestamp.getTime()) ? null : timestamp;
+  if (typeof timestamp?.toDate === 'function') {
+    try {
+      const d = timestamp.toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d;
+    } catch (e) {}
+  }
+  if (typeof timestamp?.toMillis === 'function') {
+    try {
+      const ms = timestamp.toMillis();
+      if (typeof ms === 'number' && !isNaN(ms) && ms > 0) return new Date(ms);
+    } catch (e) {}
+  }
+  if (typeof timestamp === 'number' && !isNaN(timestamp) && timestamp > 0) {
+    return new Date(timestamp);
+  }
+  if (timestamp.seconds && typeof timestamp.seconds === 'number') {
+    return new Date(timestamp.seconds * 1000);
+  }
+  if (typeof timestamp === 'string') {
+    const trimmed = timestamp.trim();
+    const parsed = Date.parse(trimmed);
+    if (!isNaN(parsed) && parsed > 0) return new Date(parsed);
+  }
+  return null;
+};
+
 /**
  * Intelligent relative timestamp formatter for Aeirmist
  * - Within 24h: 2m ago, 3h ago, etc.
@@ -9,22 +39,8 @@ import { Timestamp } from 'firebase/firestore';
 export const formatAeirmistTimestamp = (timestamp: any): string => {
   if (!timestamp) return 'Just now';
   
-  let date: Date;
-  if (timestamp instanceof Timestamp) {
-    date = timestamp.toDate();
-  } else if (timestamp instanceof Date) {
-    date = timestamp;
-  } else if (typeof timestamp === 'number') {
-    date = new Date(timestamp);
-  } else if (typeof timestamp === 'string') {
-    date = new Date(timestamp);
-  } else if (timestamp.seconds) {
-    date = new Date(timestamp.seconds * 1000);
-  } else {
-    return 'Just now';
-  }
-
-  if (isNaN(date.getTime())) return 'Just now';
+  const date = toDateSafe(timestamp);
+  if (!date) return 'Just now';
 
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
@@ -66,22 +82,8 @@ export const formatAeirmistTimestamp = (timestamp: any): string => {
 export const formatShortTimestamp = (timestamp: any): string => {
   if (!timestamp) return 'now';
   
-  let date: Date;
-  if (timestamp instanceof Timestamp) {
-    date = timestamp.toDate();
-  } else if (timestamp instanceof Date) {
-    date = timestamp;
-  } else if (typeof timestamp === 'number') {
-    date = new Date(timestamp);
-  } else if (typeof timestamp === 'string') {
-    date = new Date(timestamp);
-  } else if (timestamp.seconds) {
-    date = new Date(timestamp.seconds * 1000);
-  } else {
-    return 'now';
-  }
-
-  if (isNaN(date.getTime())) return 'now';
+  const date = toDateSafe(timestamp);
+  if (!date) return 'now';
 
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
@@ -101,22 +103,8 @@ export const formatShortTimestamp = (timestamp: any): string => {
 export const formatDateSeparator = (timestamp: any): string => {
   if (!timestamp) return '';
   
-  let date: Date;
-  if (timestamp instanceof Timestamp) {
-    date = timestamp.toDate();
-  } else if (timestamp instanceof Date) {
-    date = timestamp;
-  } else if (typeof timestamp === 'number') {
-    date = new Date(timestamp);
-  } else if (typeof timestamp === 'string') {
-    date = new Date(timestamp);
-  } else if (timestamp.seconds) {
-    date = new Date(timestamp.seconds * 1000);
-  } else {
-    return '';
-  }
-
-  if (isNaN(date.getTime())) return '';
+  const date = toDateSafe(timestamp);
+  if (!date) return '';
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -140,28 +128,21 @@ export const formatDateSeparator = (timestamp: any): string => {
  */
 export const formatTimeOnly = (timestamp: any): string => {
   if (!timestamp) return '';
-  let date: Date;
-  if (timestamp instanceof Timestamp) {
-    date = timestamp.toDate();
-  } else if (timestamp instanceof Date) {
-    date = timestamp;
-  } else if (typeof timestamp === 'number') {
-    date = new Date(timestamp);
-  } else if (typeof timestamp === 'string') {
-    date = new Date(timestamp);
-  } else if (timestamp.seconds) {
-    date = new Date(timestamp.seconds * 1000);
-  } else {
-    return '';
+  if (typeof timestamp === 'string') {
+    const trimmed = timestamp.trim();
+    if (/^\d{1,2}:\d{2}(\s*(AM|PM|am|pm))?$/.test(trimmed)) {
+      return trimmed;
+    }
   }
-
-  if (isNaN(date.getTime())) return '';
+  
+  const date = toDateSafe(timestamp);
+  if (!date) return typeof timestamp === 'string' ? timestamp : '';
 
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 };
 
 /**
- * Formatter for active status (e.g. "Active 12 minutes ago")
+ * Formatter for active status (e.g. "Active now", "Active 2m ago")
  */
 export const formatActiveStatus = (isOnline: boolean, lastSeen: any, hideExactTime: boolean = false): string => {
   if (isOnline && !hideExactTime) return 'Active now';
@@ -169,7 +150,7 @@ export const formatActiveStatus = (isOnline: boolean, lastSeen: any, hideExactTi
   if (!lastSeen) return 'Offline';
   
   const formattedTime = formatAeirmistTimestamp(lastSeen);
-  if (formattedTime.includes('ago')) {
+  if (formattedTime === 'Just now' || formattedTime.includes('ago')) {
     return `Active ${formattedTime}`;
   }
   return `Last seen ${formattedTime}`;

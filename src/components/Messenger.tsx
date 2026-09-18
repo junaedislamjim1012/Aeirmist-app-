@@ -2304,7 +2304,7 @@ const ChatWindow = ({
     return () => unsubscribe();
   }, [db, chat.id, user?.uid, profile?.id, scrollToBottom]);
 
-  // Derive processed messages with live read/delivered status
+  // Derive processed messages with live read/delivered status and guaranteed stable chronological order
   const displayedMessages = useMemo(() => {
     const otherParticipantId = chat.otherParticipantId || chat.profileIds?.find((id: string) => id !== profile?.id);
     
@@ -2312,14 +2312,13 @@ const ChatWindow = ({
       if (!val) return 0;
       if (typeof val.toMillis === 'function') return val.toMillis();
       if (typeof val.seconds === 'number') return val.seconds * 1000;
-      if (typeof val === 'number') return val;
+      if (typeof val === 'number' && val > 0) return val;
       if (val instanceof Date) return val.getTime();
-      try {
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? 0 : d.getTime();
-      } catch (e) {
-        return 0;
+      if (typeof val === 'string') {
+        const parsed = Date.parse(val);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
       }
+      return 0;
     };
 
     const lastRead = parseTimestampMs(chat.lastRead?.[otherParticipantId || '']);
@@ -2328,31 +2327,29 @@ const ChatWindow = ({
     const merged = [...messages, ...optimistic].filter((msg, index, self) => {
       // Deduplicate optimistic messages if server confirms receipt
       if (msg.isOptimistic) {
-        const confirmed = messages.some(m => m.metadata?.optimisticId === msg.id);
+        const confirmed = messages.some(m => m.metadata?.optimisticId === msg.id || m.id === msg.id);
         if (confirmed) return false;
       }
       return index === self.findIndex((m) => m.id === msg.id);
     });
 
-    const sorted = merged.map(m => {
-       const rawTs = m.timestampMs || parseTimestampMs(m.timestamp) || parseTimestampMs(m.createdAt);
-       const timestampMs = rawTs || (m.isOptimistic ? Date.now() : 0);
+    const sorted = merged.map((m, originalIndex) => {
+       const timestampMs = (typeof m.timestampMs === 'number' && m.timestampMs > 0)
+         ? m.timestampMs
+         : (parseTimestampMs(m.createdAt) || parseTimestampMs(m.timestamp) || (m.isOptimistic ? Date.now() : Date.now()));
        return {
          ...m,
          timestampMs,
-         isSeen: m.isSeen || (m.senderId === profile.id && timestampMs <= lastRead),
-         isDelivered: m.isDelivered || (m.senderId === profile.id && timestampMs <= lastDelivered),
+         _originalIndex: originalIndex,
+         isSeen: m.isSeen || (m.senderId === profile?.id && timestampMs <= lastRead),
+         isDelivered: m.isDelivered || (m.senderId === profile?.id && timestampMs <= lastDelivered),
          isFailed: failedMessages.has(m.id)
        };
     }).sort((a, b) => {
-      // Ensure optimistic messages anchor stably at the bottom
-      if (a.isOptimistic && !b.isOptimistic) {
-        return Math.max(a.timestampMs, (b.timestampMs || 0) + 1) - (b.timestampMs || 0);
+      if (a.timestampMs !== b.timestampMs) {
+        return a.timestampMs - b.timestampMs;
       }
-      if (!a.isOptimistic && b.isOptimistic) {
-        return (a.timestampMs || 0) - Math.max(b.timestampMs, (a.timestampMs || 0) + 1);
-      }
-      return (a.timestampMs || 0) - (b.timestampMs || 0);
+      return a._originalIndex - b._originalIndex;
     });
 
     return sorted.map((m, i) => ({
@@ -2362,7 +2359,7 @@ const ChatWindow = ({
         isNewSender: i === 0 || sorted[i-1].senderId !== m.senderId
       }
     }));
-  }, [messages, optimistic, chat.lastRead, chat.lastDelivered, chat.id, profile.id, failedMessages]);
+  }, [messages, optimistic, chat.lastRead, chat.lastDelivered, chat.id, profile?.id, failedMessages]);
   
   // Stable auto-scroll on new messages or list growth
   const prevMsgLengthRef = useRef(displayedMessages.length);
@@ -2742,17 +2739,23 @@ const ChatWindow = ({
                 <div className="flex items-center gap-1 mt-0.5">
                   <span className={`text-[8px] uppercase tracking-widest font-black italic ${isVaultMode ? 'text-[#c77dff]' : 'text-aeirmist-cyan'}`}>Typing...</span>
                 </div>
-              ) : (
-                <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <p className={`text-[8px] uppercase tracking-widest font-bold ${!!onlineUsers?.has?.(chat.otherParticipantId || '') && otherProfile?.messagingSettings?.onlineStatus !== false && profile?.messagingSettings?.onlineStatus !== false ? 'text-aeirmist-lime' : 'text-white/30'} truncate`}>
-                    {formatActiveStatus(
-                      !!onlineUsers?.has?.(chat.otherParticipantId || '') && profile?.messagingSettings?.onlineStatus !== false, 
-                      otherProfile?.lastSeen, 
-                      otherProfile?.messagingSettings?.onlineStatus === false || profile?.messagingSettings?.onlineStatus === false
-                    )}
-                  </p>
-                </div>
-              )
+              ) : (() => {
+                const otherId = chat.otherParticipantId || chat.profileIds?.find((id: string) => id !== profile?.id) || otherProfile?.id;
+                const isOtherOnline = (otherProfile?.status === 'online' || !!onlineUsers?.has(otherId || '')) && otherProfile?.messagingSettings?.onlineStatus !== false;
+                const showStatus = otherProfile?.messagingSettings?.onlineStatus !== false && profile?.messagingSettings?.onlineStatus !== false;
+                return (
+                  <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                    <p className={`text-[8px] uppercase tracking-widest font-bold ${isOtherOnline && showStatus ? 'text-aeirmist-lime flex items-center gap-1' : 'text-white/40'} truncate`}>
+                      {isOtherOnline && showStatus && <span className="w-1.5 h-1.5 rounded-full bg-aeirmist-lime animate-pulse inline-block" />}
+                      {formatActiveStatus(
+                        isOtherOnline && showStatus, 
+                        otherProfile?.lastSeen || otherProfile?.updatedAt, 
+                        !showStatus
+                      )}
+                    </p>
+                  </div>
+                );
+              })()
             )}
           </div>
         </div>
