@@ -155,3 +155,39 @@ export const formatActiveStatus = (isOnline: boolean, lastSeen: any, hideExactTi
   }
   return `Last seen ${formattedTime}`;
 };
+
+/**
+ * Meta (Instagram / Messenger / WhatsApp) styled inbox timestamp formatter
+ * e.g. "now", "2m", "5h", "Yesterday", "Wed", "16 Sep"
+ */
+export const formatMetaInboxTimestamp = (timestamp: any): string => {
+  if (!timestamp) return '';
+  const date = toDateSafe(timestamp);
+  if (!date) return '';
+
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+  if (diffInSeconds < 60) return 'now';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m`;
+  if (diffInSeconds < 86400 && date.getDate() === now.getDate() && date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+  
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return 'Yesterday';
+  }
+
+  const diffInDays = Math.floor(diffInSeconds / 86400);
+  if (diffInDays < 7) {
+    return date.toLocaleDateString([], { weekday: 'short' });
+  }
+
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' });
+};

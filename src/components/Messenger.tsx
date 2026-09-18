@@ -73,13 +73,45 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Chat, Message } from '../types/messenger';
-import { formatAeirmistTimestamp, formatShortTimestamp, formatActiveStatus, formatDateSeparator } from '../lib/date';
+import { 
+  formatAeirmistTimestamp, 
+  formatShortTimestamp, 
+  formatActiveStatus, 
+  formatDateSeparator, 
+  formatMetaInboxTimestamp 
+} from '../lib/date';
 import { useAeirmist } from '../context/AeirmistContext';
 import { aeirmistCache } from '../services/CacheService';
 import { mediaService, MediaQuality } from '../services/MediaService';
 import { messagingService } from '../modules/messaging/MessagingService';
 import { aeirmistCall } from '../modules/calls/CallService';
 import { logger } from '@/src/utils/logger';
+
+export const getChatActivityMs = (chat: any): number => {
+  if (!chat) return 0;
+  const ts = chat.updatedAt || chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.createdAt;
+  if (!ts) return 0;
+  if (typeof ts?.toMillis === 'function') {
+    try {
+      const ms = ts.toMillis();
+      if (typeof ms === 'number' && !isNaN(ms) && ms > 0) return ms;
+    } catch (e) {}
+  }
+  if (typeof ts?.toDate === 'function') {
+    try {
+      const d = ts.toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
+    } catch (e) {}
+  }
+  if (ts instanceof Date && !isNaN(ts.getTime())) return ts.getTime();
+  if (typeof ts === 'number' && !isNaN(ts) && ts > 0) return ts;
+  if (ts.seconds && typeof ts.seconds === 'number') return ts.seconds * 1000;
+  if (typeof ts === 'string') {
+    const parsed = Date.parse(ts);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+};
 
 
 const moods = {
@@ -590,7 +622,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       const processedChats = fetchedChats.map(data => {
         // If explicitly deleted for this profile, skip unless a new message arrived after deletion
         const deletedAt = data.deletedFor?.[profile.id];
-        const chatUpdatedAt = data.updatedAt?.toMillis?.() || Date.now();
+        const chatUpdatedAt = getChatActivityMs(data);
         if (deletedAt === true) return null; // Legacy support
         if (typeof deletedAt === 'number' && chatUpdatedAt <= deletedAt) return null;
 
@@ -661,6 +693,8 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           displayLastMsg = rawLastText.startsWith('You: ') ? rawLastText : `You: ${rawLastText}`;
         }
 
+        const calculatedActivityMs = getChatActivityMs(data);
+
         return {
           ...data,
           id: data.id,
@@ -680,7 +714,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           online: !!onlineUsers?.has?.(otherParticipantId),
           lastMessageSenderId: lastSenderId,
           lastMessageMood: data.lastMessage?.mood,
-          updatedAtMs: data.updatedAt?.toMillis?.() || Date.now()
+          updatedAtMs: calculatedActivityMs
         };
       }).filter(c => c !== null) as any[];
 
@@ -858,6 +892,14 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
         (isMySpaceSearch && c.id.startsWith('myspace_'))
       );
     }
+
+    list.sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      const timeA = a.updatedAtMs || getChatActivityMs(a);
+      const timeB = b.updatedAtMs || getChatActivityMs(b);
+      return (timeB || 0) - (timeA || 0);
+    });
 
     return list;
   }, [chats, mainChats, requestChats, activeFilter, onlineUsers, searchQuery]);
@@ -1756,12 +1798,15 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
               {filteredChats.map((chat) => {
                 const isOnline = !!onlineUsers?.has?.(chat.otherParticipantId);
                 const isSelected = currentChat?.id === chat.id;
+                const activityTimestamp = chat.updatedAtMs || getChatActivityMs(chat);
+                const metaTime = formatMetaInboxTimestamp(activityTimestamp);
+
                 return (
                   <div 
                     key={chat.id} 
                     onClick={() => handleChatSelect(chat)}
                     onContextMenu={(e) => handleContextMenu(e, chat.id)}
-                    className={`h-[72px] px-4 flex items-center gap-4 cursor-pointer hover:bg-aeirmist-cyan/[0.05] transition-all relative group ${isSelected ? 'bg-aeirmist-cyan/[0.08]' : ''}`}
+                    className={`h-[72px] px-4 flex items-center gap-3.5 cursor-pointer hover:bg-aeirmist-cyan/[0.05] transition-all relative group ${isSelected ? 'bg-aeirmist-cyan/[0.08]' : ''}`}
                   >
                     {/* Avatar */}
                     {chat.isGroup || chat.type === 'group' ? (
@@ -1784,37 +1829,49 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                     )}
 
                     {/* Chat Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h3 className={`text-[14px] font-bold truncate ${chat.unread ? 'text-white' : 'text-white/90'}`}>
-                          {chat.isGroup || chat.type === 'group' ? (chat.name || chat.groupName || 'Group Chat') : (chat.otherParticipantId === profile?.id ? 'My Space' : <LiveParticipantName participantId={chat.otherParticipantId} fallbackName={chat.name} chatId={chat.id} />)}
-                        </h3>
+                    <div className="flex-1 min-w-0 pr-1">
+                      {/* Top Row: Name + Pin badge + Meta timestamp */}
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <h3 className={`text-[14px] font-bold truncate ${chat.unread ? 'text-white' : 'text-white/90'}`}>
+                            {chat.isGroup || chat.type === 'group' ? (chat.name || chat.groupName || 'Group Chat') : (chat.otherParticipantId === profile?.id ? 'My Space' : <LiveParticipantName participantId={chat.otherParticipantId} fallbackName={chat.name} chatId={chat.id} />)}
+                          </h3>
+                          {chat.isPinned && (
+                            <Pin size={11} className="text-aeirmist-cyan shrink-0 rotate-45" />
+                          )}
+                        </div>
+                        {metaTime && (
+                          <span className={`text-[11px] shrink-0 font-medium ${chat.unread ? 'text-aeirmist-cyan font-bold' : 'text-white/40'}`}>
+                            {metaTime}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1 min-w-0 mt-0.5">
-                        <p className={`text-[12px] truncate ${chat.unread ? 'text-white font-medium' : 'text-white/50'}`}>
+
+                      {/* Bottom Row: Last message preview + Unread badge */}
+                      <div className="flex items-center justify-between gap-2 min-w-0 mt-0.5">
+                        <p className={`text-[12px] truncate flex-1 min-w-0 ${chat.unread ? 'text-white font-semibold' : 'text-white/50'}`}>
                           {chat.lastMessage}
                         </p>
+                        {chat.unread && (
+                          <div className="w-2.5 h-2.5 rounded-full bg-aeirmist-cyan shadow-[0_0_10px_rgba(0,242,255,0.5)] shrink-0" />
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-2 shrink-0">
+                    {/* Context Menu Action Button */}
+                    <div className="flex items-center shrink-0">
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
                           handleContextMenu(e as any, chat.id);
                         }}
-                        className="p-1.5 text-white/10 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                        className="p-1.5 text-white/10 hover:text-white hover:bg-white/5 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        title="Chat options"
                       >
                         <MoreVertical size={16} />
                       </button>
-
-                      {/* Unread indicator */}
-                      {chat.unread && (
-                        <div className="w-2.5 h-2.5 rounded-full bg-aeirmist-cyan shadow-[0_0_10px_rgba(0,242,255,0.5)]" />
-                      )}
                     </div>
                   </div>
-
                 );
               })}
             </div>
