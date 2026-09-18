@@ -1666,6 +1666,7 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
               <Collage 
                 items={collageItems} 
                 fitMode={(post as any).fitMode || 'cover'} 
+                onItemClick={() => onPostClick?.(post.id)}
                 renderLightboxSidebar={renderLightboxSidebar}
               />
             </div>

@@ -75,8 +75,11 @@ export const Collage: React.FC<CollageProps> = ({ items, fitMode = 'cover', onIt
 
   const handleThumbnailClick = (idx: number) => {
     setActiveIdx(idx);
-    setModalOpen(true);
-    if (onItemClick) onItemClick(idx);
+    if (onItemClick) {
+      onItemClick(idx);
+    } else {
+      setModalOpen(true);
+    }
   };
 
   const renderMediaCell = (item: MediaItem, idx: number, customClass: string = `w-full h-full ${fitMode === 'contain' ? 'object-contain bg-black/40' : 'object-cover object-center'}`) => {
