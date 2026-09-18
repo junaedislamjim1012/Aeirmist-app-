@@ -556,7 +556,6 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
   };
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, chatId: string } | null>(null);
   const [viewportHeight, setViewportHeight] = useState('100%');
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [isWallpaperCustomizerOpen, setIsWallpaperCustomizerOpen] = useState(false);
   const [forwardingMessage, setForwardingMessage] = useState<any | null>(null);
 
@@ -2339,6 +2338,25 @@ const ChatWindow = ({
   const [messages, setMessages] = useState<any[]>([]);
   const [optimistic, setOptimistic] = useState<any[]>([]);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkKeyboard = () => {
+      if (window.visualViewport) {
+        const heightDiff = window.innerHeight - window.visualViewport.height;
+        setIsKeyboardOpen(heightDiff > 120);
+      }
+    };
+    window.visualViewport?.addEventListener('resize', checkKeyboard);
+    window.visualViewport?.addEventListener('scroll', checkKeyboard);
+    window.addEventListener('resize', checkKeyboard);
+    return () => {
+      window.visualViewport?.removeEventListener('resize', checkKeyboard);
+      window.visualViewport?.removeEventListener('scroll', checkKeyboard);
+      window.removeEventListener('resize', checkKeyboard);
+    };
+  }, []);
 
   useEffect(() => {
     if (pendingNoteReply && pendingNoteReply.chatId === chat.id) {
