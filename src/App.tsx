@@ -1032,13 +1032,25 @@ function AppContent() {
 
   // Show unified Welcome screen on opening / initial load
   if (loading || (showSplash && !needsUsername)) {
-    const idName = (profile?.displayName?.trim() 
+    const cachedIdName = typeof window !== 'undefined' ? (localStorage.getItem('aeirmist_cached_id_name') || localStorage.getItem('aeirmist_cached_display_name')) : null;
+    const cachedProfile = typeof window !== 'undefined' ? (() => {
+      try {
+        const raw = localStorage.getItem('aeirmist_cached_profile');
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    })() : null;
+
+    const resolvedIdName = (profile?.displayName?.trim() 
       || profile?.fullName?.trim() 
       || profile?.name?.trim() 
+      || cachedProfile?.displayName?.trim()
+      || cachedProfile?.fullName?.trim()
+      || cachedProfile?.name?.trim()
+      || cachedIdName?.trim()
       || (user?.displayName && user.displayName !== profile?.username ? user.displayName.trim() : '')
-      || 'Aeirmist Member');
+      || '');
 
-    const displayNameText = user ? idName : 'AEIRMIST';
+    const displayNameText = resolvedIdName || (user ? 'Aeirmist Member' : 'AEIRMIST');
 
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center z-[100] overflow-hidden select-none">

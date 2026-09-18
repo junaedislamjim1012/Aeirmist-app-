@@ -370,7 +370,28 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [featureFlags, setFeatureFlags] = useState<Record<string, boolean>>(DEFAULT_FEATURE_FLAGS);
   const [user, setUser] = useState<User | null>(null);
   const [account, setAccount] = useState<any | null>(null);
-  const [profile, setProfile] = useState<any | null>(null);
+  const [profile, setProfile] = useState<any | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem('aeirmist_cached_profile');
+        if (cached) return JSON.parse(cached);
+      } catch (e) {}
+    }
+    return null;
+  });
+
+  // Sync profile & Id Name to localStorage for instantaneous splash hydration
+  useEffect(() => {
+    if (typeof window !== 'undefined' && profile) {
+      try {
+        localStorage.setItem('aeirmist_cached_profile', JSON.stringify(profile));
+        const idName = profile.displayName || profile.fullName || profile.name;
+        if (idName) {
+          localStorage.setItem('aeirmist_cached_id_name', idName);
+        }
+      } catch (e) {}
+    }
+  }, [profile]);
   const [allProfiles, setAllProfiles] = useState<any[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
