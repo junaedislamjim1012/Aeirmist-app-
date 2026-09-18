@@ -89,8 +89,12 @@ import { logger } from '@/src/utils/logger';
 
 export const getChatActivityMs = (chat: any): number => {
   if (!chat) return 0;
+  if (typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0) return chat.updatedAtMs;
   const ts = chat.updatedAt || chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.createdAt;
-  if (!ts) return 0;
+  if (!ts) {
+    if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
+    return 0;
+  }
   if (typeof ts?.toMillis === 'function') {
     try {
       const ms = ts.toMillis();
@@ -110,6 +114,7 @@ export const getChatActivityMs = (chat: any): number => {
     const parsed = Date.parse(ts);
     if (!isNaN(parsed) && parsed > 0) return parsed;
   }
+  if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
   return 0;
 };
 
@@ -825,6 +830,30 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
     setTempChat(null);
     setIsMobileList(false);
   };
+
+  const handleOptimisticChatBump = useCallback((chatId: string, text: string, currentChatObj?: any) => {
+    setChats(prevChats => {
+      const targetIndex = prevChats.findIndex(c => c.id === chatId);
+      let targetChat = targetIndex >= 0 ? { ...prevChats[targetIndex] } : (currentChatObj ? { ...currentChatObj } : null);
+      if (!targetChat) return prevChats;
+
+      targetChat.lastMessage = text.startsWith('You: ') ? text : `You: ${text}`;
+      targetChat.updatedAtMs = Date.now();
+      targetChat.updatedAt = new Date();
+      targetChat.unread = false;
+
+      const remaining = prevChats.filter(c => c.id !== chatId && c.id !== targetChat.id);
+      const updated = [targetChat, ...remaining];
+
+      return updated.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        const timeA = a.updatedAtMs || getChatActivityMs(a);
+        const timeB = b.updatedAtMs || getChatActivityMs(b);
+        return (timeB || 0) - (timeA || 0);
+      });
+    });
+  }, []);
 
   const handleGroupCreated = (groupId: string, groupData?: any) => {
     setIsGroupCreationOpen(false);
@@ -1928,6 +1957,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                 localAvatarURL={localAvatarURL}
                 pendingNoteReply={pendingNoteReply}
                 onClearPendingNoteReply={() => setPendingNoteReply(null)}
+                onMessageSent={handleOptimisticChatBump}
               />
             <AnimatePresence>
               {isInfoOpen && (
@@ -2122,7 +2152,8 @@ const ChatWindow = ({
   isVaultMode = false,
   localAvatarURL,
   pendingNoteReply,
-  onClearPendingNoteReply
+  onClearPendingNoteReply,
+  onMessageSent
 }: { 
   chat: Chat, 
   onBack: () => void, 
@@ -2140,7 +2171,8 @@ const ChatWindow = ({
   isVaultMode?: boolean,
   localAvatarURL?: string,
   pendingNoteReply?: { chatId: string; text: string; authorName: string } | null,
-  onClearPendingNoteReply?: () => void
+  onClearPendingNoteReply?: () => void,
+  onMessageSent?: (chatId: string, text: string, currentChat?: any) => void
 }) => {
   const [messages, setMessages] = useState<any[]>([]);
   const [optimistic, setOptimistic] = useState<any[]>([]);
@@ -2513,6 +2545,7 @@ const ChatWindow = ({
     };
     
     setOptimistic(prev => [...prev, optimisticMsg]);
+    onMessageSent?.(chat.id, `Sent a ${type}`, chat);
     
     try {
       const isNew = chat.id.startsWith('new_');
@@ -2584,6 +2617,7 @@ const ChatWindow = ({
     };
     
     setOptimistic(prev => [...prev, optimisticMsg]);
+    onMessageSent?.(chat.id, text, chat);
     requestAnimationFrame(() => scrollToBottom('auto'));
     setTimeout(() => scrollToBottom('auto'), 60);
     

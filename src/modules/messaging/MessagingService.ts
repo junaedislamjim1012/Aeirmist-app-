@@ -653,23 +653,48 @@ class MessagingService {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       logger.info(`[MessagingService] Inbox snapshot: ${snapshot.size} total active frequencies.`);
-      const chats = snapshot.docs.map(doc => ({ 
-        ...doc.data(), 
-        id: doc.id 
-      } as Chat));
-
-      // Sort client-side by updatedAt descending to bypass composite index requirements
-      chats.sort((a, b) => {
-        const getMs = (val: any) => {
-          if (!val) return 0;
-          if (typeof val.toMillis === 'function') return val.toMillis();
-          if (val instanceof Date) return val.getTime();
-          if (typeof val === 'number') return val;
-          if (val.seconds) return val.seconds * 1000;
-          return 0;
-        };
-        return getMs(b.updatedAt) - getMs(a.updatedAt);
+      const chats = snapshot.docs.map(doc => {
+        const data = doc.data({ serverTimestamps: 'estimate' });
+        const hasPending = doc.metadata.hasPendingWrites;
+        return { 
+          ...data, 
+          id: doc.id,
+          hasPendingWrites: hasPending
+        } as Chat;
       });
+
+      const getMs = (chat: any) => {
+        if (!chat) return 0;
+        const val = chat.updatedAt || chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.createdAt;
+        if (!val) {
+          if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
+          return 0;
+        }
+        if (typeof val.toMillis === 'function') {
+          try {
+            const ms = val.toMillis();
+            if (typeof ms === 'number' && !isNaN(ms) && ms > 0) return ms;
+          } catch (e) {}
+        }
+        if (typeof val.toDate === 'function') {
+          try {
+            const d = val.toDate();
+            if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
+          } catch (e) {}
+        }
+        if (val instanceof Date && !isNaN(val.getTime())) return val.getTime();
+        if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
+        if (val.seconds && typeof val.seconds === 'number') return val.seconds * 1000;
+        if (typeof val === 'string') {
+          const parsed = Date.parse(val);
+          if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+        if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
+        return 0;
+      };
+
+      // Sort client-side by activity descending
+      chats.sort((a, b) => getMs(b) - getMs(a));
       
       // Filter by profileId if possible, but fallback to all chats if profileIds is missing (legacy support)
       const currentProfileChats = chats.filter(chat => 
