@@ -78,7 +78,8 @@ import {
   formatShortTimestamp, 
   formatActiveStatus, 
   formatDateSeparator, 
-  formatMetaInboxTimestamp 
+  formatMetaInboxTimestamp,
+  extractTimestampMs
 } from '../lib/date';
 import { useAeirmist } from '../context/AeirmistContext';
 import { aeirmistCache } from '../services/CacheService';
@@ -89,32 +90,27 @@ import { logger } from '@/src/utils/logger';
 
 export const getChatActivityMs = (chat: any): number => {
   if (!chat) return 0;
-  if (typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0) return chat.updatedAtMs;
-  const ts = chat.updatedAt || chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.createdAt;
-  if (!ts) {
-    if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
-    return 0;
+  
+  // 1. Direct explicit updatedAtMs if available
+  if (typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0) {
+    return chat.updatedAtMs;
   }
-  if (typeof ts?.toMillis === 'function') {
-    try {
-      const ms = ts.toMillis();
-      if (typeof ms === 'number' && !isNaN(ms) && ms > 0) return ms;
-    } catch (e) {}
+
+  // 2. Extract from primary timestamp fields
+  const t1 = extractTimestampMs(chat.updatedAt);
+  if (t1 > 0) return t1;
+
+  const t2 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt);
+  if (t2 > 0) return t2;
+
+  const t3 = extractTimestampMs(chat.createdAt);
+  if (t3 > 0) return t3;
+
+  // 3. ONLY if optimistic / pending local write with zero server timestamp
+  if (chat.hasPendingWrites || chat.isOptimistic) {
+    return Date.now();
   }
-  if (typeof ts?.toDate === 'function') {
-    try {
-      const d = ts.toDate();
-      if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
-    } catch (e) {}
-  }
-  if (ts instanceof Date && !isNaN(ts.getTime())) return ts.getTime();
-  if (typeof ts === 'number' && !isNaN(ts) && ts > 0) return ts;
-  if (ts.seconds && typeof ts.seconds === 'number') return ts.seconds * 1000;
-  if (typeof ts === 'string') {
-    const parsed = Date.parse(ts);
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-  if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
+
   return 0;
 };
 

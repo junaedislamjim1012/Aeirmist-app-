@@ -1,32 +1,53 @@
 import { Timestamp } from 'firebase/firestore';
 
-const toDateSafe = (timestamp: any): Date | null => {
+export const extractTimestampMs = (val: any): number => {
+  if (!val) return 0;
+  if (typeof val === 'number' && !isNaN(val) && val > 0) {
+    if (val < 10000000000) return val * 1000;
+    return val;
+  }
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return val.getTime();
+  }
+  if (val instanceof Timestamp) {
+    try {
+      return val.toMillis();
+    } catch (e) {}
+  }
+  if (typeof val?.toMillis === 'function') {
+    try {
+      const ms = val.toMillis();
+      if (typeof ms === 'number' && !isNaN(ms) && ms > 0) return ms;
+    } catch (e) {}
+  }
+  if (typeof val?.toDate === 'function') {
+    try {
+      const d = val.toDate();
+      if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
+    } catch (e) {}
+  }
+  if (typeof val?.seconds === 'number' && !isNaN(val.seconds)) {
+    const ms = val.seconds * 1000 + (val.nanoseconds ? Math.floor(val.nanoseconds / 1000000) : 0);
+    if (ms > 0) return ms;
+  }
+  if (typeof val?._seconds === 'number' && !isNaN(val._seconds)) {
+    const ms = val._seconds * 1000 + (val._nanoseconds ? Math.floor(val._nanoseconds / 1000000) : 0);
+    if (ms > 0) return ms;
+  }
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed) {
+      const parsed = Date.parse(trimmed);
+      if (!isNaN(parsed) && parsed > 0) return parsed;
+    }
+  }
+  return 0;
+};
+
+export const toDateSafe = (timestamp: any): Date | null => {
   if (!timestamp) return null;
-  if (timestamp instanceof Timestamp) return timestamp.toDate();
-  if (timestamp instanceof Date) return isNaN(timestamp.getTime()) ? null : timestamp;
-  if (typeof timestamp?.toDate === 'function') {
-    try {
-      const d = timestamp.toDate();
-      if (d instanceof Date && !isNaN(d.getTime())) return d;
-    } catch (e) {}
-  }
-  if (typeof timestamp?.toMillis === 'function') {
-    try {
-      const ms = timestamp.toMillis();
-      if (typeof ms === 'number' && !isNaN(ms) && ms > 0) return new Date(ms);
-    } catch (e) {}
-  }
-  if (typeof timestamp === 'number' && !isNaN(timestamp) && timestamp > 0) {
-    return new Date(timestamp);
-  }
-  if (timestamp.seconds && typeof timestamp.seconds === 'number') {
-    return new Date(timestamp.seconds * 1000);
-  }
-  if (typeof timestamp === 'string') {
-    const trimmed = timestamp.trim();
-    const parsed = Date.parse(trimmed);
-    if (!isNaN(parsed) && parsed > 0) return new Date(parsed);
-  }
+  const ms = extractTimestampMs(timestamp);
+  if (ms > 0) return new Date(ms);
   return null;
 };
 
