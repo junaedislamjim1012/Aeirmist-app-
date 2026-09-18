@@ -108,8 +108,8 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
   // listener per batch and merging the results.
   const uidsToQueryString = React.useMemo(() => {
     if (!user || !profile) return '[]';
-    const following = profile.social?.following || [];
-    const uids = Array.from(new Set([...following, profile.id])).sort();
+    const following = (profile.social?.following || []).filter(Boolean);
+    const uids = Array.from(new Set([...following, profile.id, user.uid].filter(Boolean))).sort();
     return JSON.stringify(uids);
   }, [user?.uid, profile?.id, JSON.stringify(profile?.social?.following || [])]);
 

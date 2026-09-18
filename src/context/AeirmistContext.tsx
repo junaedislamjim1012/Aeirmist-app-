@@ -2722,12 +2722,12 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Call Signaling Listener
   useEffect(() => {
-    if (!db || !profile) return;
+    if (!db || !user?.uid) return;
     
     // 1. Listen for calls in conversations (Strict limit)
     const convQ = query(
       collection(db, 'conversations'), 
-      where('participants', 'array-contains', user?.uid),
+      where('participants', 'array-contains', user.uid),
       limit(5)
     );
 
@@ -2736,7 +2736,7 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // 2. Listen for calls (Both Incoming & Outgoing)
     const callsQ = query(
       collection(db, 'calls'),
-      where('participants', 'array-contains', user?.uid),
+      where('participants', 'array-contains', user.uid),
       limit(5)
     );
 
