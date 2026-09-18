@@ -556,6 +556,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
   };
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, chatId: string } | null>(null);
   const [viewportHeight, setViewportHeight] = useState('100%');
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [isWallpaperCustomizerOpen, setIsWallpaperCustomizerOpen] = useState(false);
   const [forwardingMessage, setForwardingMessage] = useState<any | null>(null);
 
