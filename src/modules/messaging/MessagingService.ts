@@ -31,6 +31,17 @@ function cleanUndefined(obj: any): any {
   if (obj === null || typeof obj !== 'object') {
     return obj === undefined ? null : obj;
   }
+  // CRITICAL: NEVER mutate or strip Firestore FieldValue sentinels or Timestamp instances!
+  if (
+    obj instanceof Date ||
+    typeof obj?.toMillis === 'function' ||
+    typeof obj?.toDate === 'function' ||
+    obj?.constructor?.name?.includes?.('FieldValue') ||
+    obj?.constructor?.name?.includes?.('Timestamp') ||
+    typeof obj?._methodName === 'string'
+  ) {
+    return obj;
+  }
   if (Array.isArray(obj)) {
     return obj.map(cleanUndefined);
   }
@@ -302,6 +313,7 @@ class MessagingService {
             }
           },
           latestMessageAt: serverTimestamp(),
+          latestMessageAtMs: Date.now(),
           latestMessageId: messageId,
           latestMessageSenderId: profile.id,
           latestMessagePreview: text,
@@ -309,6 +321,7 @@ class MessagingService {
             text,
             senderId: profile.id,
             timestamp: serverTimestamp(),
+            timestampMs: Date.now(),
             type,
             mediaUrl: mediaUrl || null,
             mood: metadata.mood || null,
@@ -322,7 +335,8 @@ class MessagingService {
           lastDelivered: { [profile.id]: serverTimestamp() },
           status: initialStatus,
           createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          updatedAtMs: Date.now()
         }));
 
         // Trigger initial notification
@@ -351,9 +365,14 @@ class MessagingService {
         
         // OPTIMIZATION: Only send notification if receiver is NOT online 
         // or if explicitly requested (e.g. mention)
-        const shouldNotify = !metadata.isReceiverOnline || metadata.forceNotify;
-        
-        this.updateExistingConversation(batch, db, finalConvId, profile.id, receiverId, receiverUid, text, type, mediaUrl, { ...metadata, shouldNotify, senderUid: user.uid, messageId });
+        this.updateExistingConversation(batch, db, finalConvId, profile.id, receiverId, receiverUid, text, type, mediaUrl, { 
+          ...metadata, 
+          senderName: metadata.senderName || profile.displayName || profile.username,
+          senderPhoto: metadata.senderPhoto || profile.photoURL || '',
+          shouldNotify, 
+          senderUid: user.uid, 
+          messageId 
+        });
       }
       
       const msgRef = doc(db, 'conversations', finalConvId, 'messages', messageId);
@@ -393,16 +412,20 @@ class MessagingService {
 
     const updates: any = {};
 
+    const clientNow = Date.now();
     // ALWAYS update latestMessageAt, latestMessageId, latestMessageSenderId, latestMessagePreview and updatedAt
     updates.latestMessageAt = serverTimestamp();
+    updates.latestMessageAtMs = clientNow;
     updates.latestMessageId = metadata.messageId || null;
     updates.latestMessageSenderId = senderId;
     updates.latestMessagePreview = text;
     updates.updatedAt = serverTimestamp();
+    updates.updatedAtMs = clientNow;
     updates.lastMessage = {
       text,
       senderId,
       timestamp: serverTimestamp(),
+      timestampMs: clientNow,
       type,
       mediaUrl: mediaUrl || null,
       mood: metadata.mood || null,
@@ -429,9 +452,16 @@ class MessagingService {
     if (metadata.targetProfile && metadata.recipientId) {
       updates[`participantDetails.${metadata.recipientId}`] = metadata.targetProfile;
     }
-    if (metadata.senderName || metadata.senderPhoto || metadata.senderUid) {
+    const rawSenderName = metadata.senderName || metadata.senderDisplayName;
+    const isSenderNameValid = rawSenderName && typeof rawSenderName === 'string' &&
+      rawSenderName.trim() !== '' &&
+      rawSenderName.toLowerCase() !== 'unknown' &&
+      rawSenderName.toLowerCase() !== 'unknown user';
+    const cleanSenderName = isSenderNameValid ? rawSenderName.trim() : 'Aeirmist User';
+
+    if (rawSenderName || metadata.senderPhoto || metadata.senderUid) {
       updates[`participantDetails.${senderId}`] = {
-        displayName: metadata.senderName || 'Unknown',
+        displayName: cleanSenderName,
         photoURL: metadata.senderPhoto || '',
         uid: metadata.senderUid || '',
         username: senderId
@@ -457,7 +487,7 @@ class MessagingService {
         userId: receiverId || receiverUid, // Use Profile ID if available, else Auth UID
         fromUserId: senderId,
         fromUser: {
-          displayName: metadata.senderName || 'Unknown',
+          displayName: cleanSenderName,
           photoURL: metadata.senderPhoto || ''
         },
         type: 'message',

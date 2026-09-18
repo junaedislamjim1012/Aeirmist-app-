@@ -88,6 +88,7 @@ import { mediaService, MediaQuality } from '../services/MediaService';
 import { messagingService } from '../modules/messaging/MessagingService';
 import { aeirmistCall } from '../modules/calls/CallService';
 import { logger } from '@/src/utils/logger';
+import { useBackHandler } from '../utils/backNavigation';
 
 export const getChatActivityMs = (chat: any): number => {
   if (!chat) return 0;
@@ -103,26 +104,26 @@ export const getChatActivityMs = (chat: any): number => {
     }
   }
 
-  // 2. Canonical single source: latestMessageAt
-  const t0 = extractTimestampMs(chat.latestMessageAt);
-  if (t0 > 0) return t0;
-
-  // 3. Fallbacks: lastMessage timestamp or updatedAt
-  const t1 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.rawLastMessage?.timestamp);
-  const t2 = extractTimestampMs(chat.updatedAt);
-  const fallbackMs = Math.max(t1, t2);
-  if (fallbackMs > 0) return fallbackMs;
-
-  const t3 = extractTimestampMs(chat.createdAt);
-  if (t3 > 0) return t3;
-
+  // 2. Direct latestMessageAtMs if set as number
   if (typeof chat.latestMessageAtMs === 'number' && chat.latestMessageAtMs > 0) {
     return chat.latestMessageAtMs;
   }
 
-  if (typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0) {
-    return chat.updatedAtMs;
-  }
+  // 3. Canonical single source: latestMessageAt
+  const t0 = extractTimestampMs(chat.latestMessageAt);
+  if (t0 > 0) return t0;
+
+  // 4. Fallbacks: lastMessage (timestamp / timestampMs / createdAt) -> updatedAt -> createdAt
+  const t1 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.rawLastMessage?.timestamp);
+  const t1Ms = typeof chat.lastMessage?.timestampMs === 'number' && chat.lastMessage.timestampMs > 0 ? chat.lastMessage.timestampMs : 0;
+  const t2 = extractTimestampMs(chat.updatedAt);
+  const t2Ms = typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0 ? chat.updatedAtMs : 0;
+  
+  const fallbackMs = Math.max(t1, t1Ms, t2, t2Ms);
+  if (fallbackMs > 0) return fallbackMs;
+
+  const t3 = extractTimestampMs(chat.createdAt);
+  if (t3 > 0) return t3;
 
   if (chat.hasPendingWrites || chat.isOptimistic) {
     return Date.now();
@@ -582,6 +583,72 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
     setForwardingMessage(null);
   };
 
+  // Intercept back actions for Messenger modals, search, views, and mobile active chat
+  useBackHandler(() => {
+    if (contextMenu) {
+      setContextMenu(null);
+      return true;
+    }
+    if (forwardingMessage) {
+      setForwardingMessage(null);
+      return true;
+    }
+    if (isSettingsOpen) {
+      setIsSettingsOpen(false);
+      return true;
+    }
+    if (isAccountSwitcherOpen) {
+      setIsAccountSwitcherOpen(false);
+      return true;
+    }
+    if (isGroupCreationOpen) {
+      setIsGroupCreationOpen(false);
+      return true;
+    }
+    if (isInfoOpen) {
+      setIsInfoOpen(false);
+      return true;
+    }
+    if (vaultState.isOpen) {
+      setVaultState(v => ({ ...v, isOpen: false, activeVaultChatId: null }));
+      return true;
+    }
+    if (viewingProfileInSearch) {
+      setViewingProfileInSearch(null);
+      return true;
+    }
+    if (isSearchFocused) {
+      setIsSearchFocused(false);
+      return true;
+    }
+    if (view !== 'chats') {
+      setView('chats');
+      return true;
+    }
+    // Mobile active chat view: return to conversations list
+    if (!isMobileList || activeChatId) {
+      setIsMobileList(true);
+      setActiveChatId(null);
+      setTempChat(null);
+      setIsNavHidden(false);
+      return true;
+    }
+    return false;
+  }, true, 80, [
+    contextMenu,
+    forwardingMessage,
+    isSettingsOpen,
+    isAccountSwitcherOpen,
+    isGroupCreationOpen,
+    isInfoOpen,
+    vaultState.isOpen,
+    viewingProfileInSearch,
+    isSearchFocused,
+    view,
+    isMobileList,
+    activeChatId
+  ]);
+
   // Global chats filtering logic - strictly mutually exclusive to prevent duplicated inboxes
   const mainChats = useMemo(() => {
     return chats.filter(data => {
@@ -732,12 +799,19 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
 
         const calculatedActivityMs = getChatActivityMs(data);
 
+        const rawDisplayName = details?.displayName;
+        const isNameValid = rawDisplayName && typeof rawDisplayName === 'string' && 
+          rawDisplayName.trim() !== '' && 
+          rawDisplayName.toLowerCase() !== 'unknown' && 
+          rawDisplayName.toLowerCase() !== 'unknown user';
+        const cleanDisplayName = isNameValid ? rawDisplayName.trim() : (details?.username || 'Aeirmist User');
+
         return {
           ...data,
           id: data.id,
           otherParticipantId,
           otherParticipantUid,
-          name: (data.isGroup || data.type === 'group') ? (data.groupName || data.name || 'Group Chat') : (details.displayName || 'Aeirmist User'),
+          name: (data.isGroup || data.type === 'group') ? (data.groupName || data.name || 'Group Chat') : cleanDisplayName,
           photo: (data.isGroup || data.type === 'group') ? getAvatarUrl(data.groupPhotoURL || data.photo) : getAvatarUrl(details.photoURL),
           rawLastMessage: rawLastMsg,
           lastMessage: displayLastMsg,
@@ -1886,11 +1960,16 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                 <NotesSystem 
                   chats={chats} 
                   onReplyNote={(chatId, noteText, authorName) => {
+                    const isAuthorValid = authorName && typeof authorName === 'string' && 
+                      authorName.trim() !== '' && 
+                      authorName.toLowerCase() !== 'unknown' && 
+                      authorName.toLowerCase() !== 'unknown user';
+                    const cleanAuthor = isAuthorValid ? authorName.trim() : 'User';
                     setActiveChatId(chatId);
                     setPendingNoteReply({
                       chatId,
-                      text: `${authorName}'s Note: "${noteText}"`,
-                      authorName
+                      text: `${cleanAuthor}'s Note: "${noteText}"`,
+                      authorName: cleanAuthor
                     });
                   }}
                 />
@@ -1903,7 +1982,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
               {filteredChats.map((chat) => {
                 const isOnline = !!onlineUsers?.has?.(chat.otherParticipantId);
                 const isSelected = currentChat?.id === chat.id;
-                const activityTimestamp = chat.latestMessageAtMs || chat.updatedAtMs || getChatActivityMs(chat);
+                const activityTimestamp = getChatActivityMs(chat);
                 const metaTime = formatConversationTime(activityTimestamp) || (chat.createdAt ? formatConversationTime(chat.createdAt) : '');
 
                 return (
@@ -2334,6 +2413,27 @@ const ChatWindow = ({
     if (otherProfile.isDeleted === true || otherProfile.status === 'deleted') return true;
     return false;
   }, [isPrivateSpace, isGroupChat, chat.otherParticipantId, otherProfileLoaded, otherProfile]);
+
+  // Intercept back for overlays inside active chat
+  useBackHandler(() => {
+    if (expandedImage) {
+      setExpandedImage(null);
+      return true;
+    }
+    if (isWallpaperCustomizerOpen) {
+      setIsWallpaperCustomizerOpen(false);
+      return true;
+    }
+    if (replyingTo) {
+      setReplyingTo(null);
+      return true;
+    }
+    if (editingMessage) {
+      setEditingMessage(null);
+      return true;
+    }
+    return false;
+  }, true, 90, [expandedImage, isWallpaperCustomizerOpen, replyingTo, editingMessage]);
 
   useEffect(() => {
     const otherId = chat.otherParticipantId || chat.profileIds?.find((id: string) => id !== profile?.id);
