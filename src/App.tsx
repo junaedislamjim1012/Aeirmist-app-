@@ -362,7 +362,7 @@ function AppContent() {
 
           // 7. Camera is open
           if (s.cameraConfig?.isOpen) {
-            setCameraConfig((prev: any) => prev ? { ...prev, isOpen: false } : null);
+            setCameraConfig(null);
             return;
           }
 

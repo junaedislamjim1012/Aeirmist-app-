@@ -91,27 +91,50 @@ import { logger } from '@/src/utils/logger';
 export const getChatActivityMs = (chat: any): number => {
   if (!chat) return 0;
   
-  // 1. Direct explicit updatedAtMs if available
-  if (typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0) {
-    return chat.updatedAtMs;
+  // 1. Optimistic bump check if write is pending
+  if (chat._optimisticBumpAt && (chat.isOptimistic || chat.hasPendingWrites)) {
+    return chat._optimisticBumpAt;
   }
 
   // 2. Extract from primary timestamp fields
-  const t1 = extractTimestampMs(chat.updatedAt);
+  const t0 = extractTimestampMs(chat.latestMessageAt);
+  if (t0 > 0) return t0;
+
+  const t1 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.rawLastMessage?.timestamp);
   if (t1 > 0) return t1;
 
-  const t2 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt);
+  const t2 = extractTimestampMs(chat.updatedAt);
   if (t2 > 0) return t2;
 
   const t3 = extractTimestampMs(chat.createdAt);
   if (t3 > 0) return t3;
 
-  // 3. ONLY if optimistic / pending local write with zero server timestamp
+  if (typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0) {
+    return chat.updatedAtMs;
+  }
+
   if (chat.hasPendingWrites || chat.isOptimistic) {
     return Date.now();
   }
 
   return 0;
+};
+
+export const sortChatsDeterministic = (chatsList: any[], activeProfileId?: string): any[] => {
+  return [...chatsList].sort((a, b) => {
+    const pinA = typeof a.isPinned === 'boolean' ? a.isPinned : !!a.isPinned?.[activeProfileId || ''];
+    const pinB = typeof b.isPinned === 'boolean' ? b.isPinned : !!b.isPinned?.[activeProfileId || ''];
+    if (pinA && !pinB) return -1;
+    if (!pinA && pinB) return 1;
+
+    const timeA = a.latestMessageAtMs || a.updatedAtMs || getChatActivityMs(a);
+    const timeB = b.latestMessageAtMs || b.updatedAtMs || getChatActivityMs(b);
+
+    if (timeB !== timeA) {
+      return (timeB || 0) - (timeA || 0);
+    }
+    return String(b.id || '').localeCompare(String(a.id || ''));
+  });
 };
 
 
@@ -703,6 +726,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           otherParticipantUid,
           name: (data.isGroup || data.type === 'group') ? (data.groupName || data.name || 'Group Chat') : (details.displayName || 'Aeirmist User'),
           photo: (data.isGroup || data.type === 'group') ? getAvatarUrl(data.groupPhotoURL || data.photo) : getAvatarUrl(details.photoURL),
+          rawLastMessage: rawLastMsg,
           lastMessage: displayLastMsg,
           time: timeString,
           unread: typeof data.unreadCount === 'number' ? data.unreadCount > 0 : (data.unreadCount?.[profile.id] || 0) > 0,
@@ -715,6 +739,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           online: !!onlineUsers?.has?.(otherParticipantId),
           lastMessageSenderId: lastSenderId,
           lastMessageMood: data.lastMessage?.mood,
+          latestMessageAtMs: calculatedActivityMs,
           updatedAtMs: calculatedActivityMs
         };
       }).filter(c => c !== null) as any[];
@@ -723,20 +748,22 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
         const prevMap = new Map(prevChats.map(c => [c.id, c]));
         const merged = processedChats.map(chat => {
           const prev = prevMap.get(chat.id);
-          const highestActivity = Math.max(prev?.updatedAtMs || 0, chat.updatedAtMs || 0);
+          let activity = chat.latestMessageAtMs || chat.updatedAtMs || getChatActivityMs(chat);
+          // If prev state had an optimistic bump within the last 20 seconds and server has not yet written a newer timestamp
+          if (prev?._optimisticBumpAt && (chat.hasPendingWrites || activity < prev._optimisticBumpAt)) {
+            if (Date.now() - prev._optimisticBumpAt < 20000) {
+              activity = prev._optimisticBumpAt;
+            }
+          }
           return {
             ...chat,
-            updatedAtMs: highestActivity
+            updatedAtMs: activity,
+            latestMessageAtMs: activity,
+            _optimisticBumpAt: prev?._optimisticBumpAt
           };
         });
 
-        return merged.sort((a, b) => {
-          if (a.isPinned && !b.isPinned) return -1;
-          if (!a.isPinned && b.isPinned) return 1;
-          const timeA = a.updatedAtMs || getChatActivityMs(a);
-          const timeB = b.updatedAtMs || getChatActivityMs(b);
-          return (timeB || 0) - (timeA || 0);
-        });
+        return sortChatsDeterministic(merged, profile.id);
       });
     });
 
@@ -841,28 +868,53 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
   };
 
   const handleOptimisticChatBump = useCallback((chatId: string, text: string, currentChatObj?: any) => {
+    const now = Date.now();
+    const isNew = chatId.startsWith('new_');
+    const targetId = isNew ? chatId.replace('new_', '') : null;
+    const canonicalId = (isNew && targetId && profile?.id) 
+      ? [profile.id, targetId].sort().join('_') 
+      : chatId;
+
     setChats(prevChats => {
-      const targetIndex = prevChats.findIndex(c => c.id === chatId);
-      let targetChat = targetIndex >= 0 ? { ...prevChats[targetIndex] } : (currentChatObj ? { ...currentChatObj } : null);
-      if (!targetChat) return prevChats;
-
-      targetChat.lastMessage = text.startsWith('You: ') ? text : `You: ${text}`;
-      targetChat.updatedAtMs = Date.now();
-      targetChat.updatedAt = new Date();
-      targetChat.unread = false;
-
-      const remaining = prevChats.filter(c => c.id !== chatId && c.id !== targetChat.id);
-      const updated = [targetChat, ...remaining];
-
-      return updated.sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        const timeA = a.updatedAtMs || getChatActivityMs(a);
-        const timeB = b.updatedAtMs || getChatActivityMs(b);
-        return (timeB || 0) - (timeA || 0);
+      let found = false;
+      const updated = prevChats.map(c => {
+        if (c.id === chatId || c.id === canonicalId) {
+          found = true;
+          return {
+            ...c,
+            id: canonicalId,
+            lastMessage: text.startsWith('You: ') ? text : `You: ${text}`,
+            latestMessagePreview: text,
+            updatedAtMs: now,
+            latestMessageAtMs: now,
+            _optimisticBumpAt: now,
+            updatedAt: new Date(now),
+            unread: false,
+            isTemporary: false
+          };
+        }
+        return c;
       });
+
+      if (!found && currentChatObj) {
+        const newEntry = {
+          ...currentChatObj,
+          id: canonicalId,
+          lastMessage: text.startsWith('You: ') ? text : `You: ${text}`,
+          latestMessagePreview: text,
+          updatedAtMs: now,
+          latestMessageAtMs: now,
+          _optimisticBumpAt: now,
+          updatedAt: new Date(now),
+          unread: false,
+          isTemporary: false
+        };
+        updated.unshift(newEntry);
+      }
+
+      return sortChatsDeterministic(updated, profile?.id);
     });
-  }, []);
+  }, [profile?.id]);
 
   const handleGroupCreated = (groupId: string, groupData?: any) => {
     setIsGroupCreationOpen(false);
@@ -931,15 +983,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       );
     }
 
-    list.sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      const timeA = a.updatedAtMs || getChatActivityMs(a);
-      const timeB = b.updatedAtMs || getChatActivityMs(b);
-      return (timeB || 0) - (timeA || 0);
-    });
-
-    return list;
+    return sortChatsDeterministic(list, profile?.id);
   }, [chats, mainChats, requestChats, activeFilter, onlineUsers, searchQuery]);
 
   const themeStyles = {
@@ -1836,7 +1880,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
               {filteredChats.map((chat) => {
                 const isOnline = !!onlineUsers?.has?.(chat.otherParticipantId);
                 const isSelected = currentChat?.id === chat.id;
-                const activityTimestamp = chat.updatedAtMs || getChatActivityMs(chat);
+                const activityTimestamp = chat.latestMessageAtMs || chat.updatedAtMs || getChatActivityMs(chat);
                 const metaTime = formatMetaInboxTimestamp(activityTimestamp);
 
                 return (

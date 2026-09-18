@@ -53,6 +53,8 @@ import {
   persistentMultipleTabManager
 } from 'firebase/firestore';
 import { getStorage, ref, deleteObject } from 'firebase/storage';
+import { extractTimestampMs } from '../lib/date';
+import { App as CapApp } from '@capacitor/app';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { normalizeUsername } from '../utils/usernameUtils';
 import { migrateUsernamesNormalized } from '../utils/migrateUsernames';
@@ -269,7 +271,6 @@ interface AeirmistContextType {
   isNavHidden: boolean;
   setIsNavHidden: (val: boolean) => void;
   suggestedUsers: any[];
-  allProfiles: any[];
   dismissSuggestion: (userId: string) => void;
   getUserInterests: () => string[];
   saveUserInterests: (interests: string[]) => void;
@@ -2354,13 +2355,12 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
        // Handle tab close / browser close
        const handleBeforeUnload = () => {
-         // Attempt one last update
-         // We use firestore directly to avoid possible React state issues during shutdown
          const profileRef = doc(db, 'profiles', profile.id);
          updateDoc(profileRef, {
            status: 'offline',
-           lastSeen: serverTimestamp()
-         });
+           lastSeen: serverTimestamp(),
+           lastActiveAt: serverTimestamp()
+         }).catch(() => {});
        };
        
        // Keep alive interval
@@ -2369,10 +2369,25 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
            const profileRef = doc(db, 'profiles', profile.id);
            updateDoc(profileRef, {
              status: 'online',
-             lastSeen: serverTimestamp()
+             lastSeen: serverTimestamp(),
+             lastActiveAt: serverTimestamp()
            }).catch(() => {});
          }
        }, 60000);
+
+       // Set up Capacitor App state listener for native Android/iOS backgrounding
+       let capListenerRemove: (() => void) | undefined;
+       try {
+         CapApp.addListener('appStateChange', ({ isActive }) => {
+           if (isActive) {
+             goOnline();
+           } else {
+             goOffline();
+           }
+         }).then(handle => {
+           capListenerRemove = () => handle.remove();
+         }).catch(() => {});
+       } catch (e) {}
 
        document.addEventListener('visibilitychange', handleVisibilityChange);
        window.addEventListener('beforeunload', handleBeforeUnload);
@@ -2381,6 +2396,7 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
          document.removeEventListener('visibilitychange', handleVisibilityChange);
          window.removeEventListener('beforeunload', handleBeforeUnload);
          clearInterval(interval);
+         if (capListenerRemove) capListenerRemove();
        };
     }
   }, [profile?.id, isSafeMode]);
@@ -2619,70 +2635,55 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     if (!db || !user || !profile) return;
     
-    // OPTIMIZATION: Only listen to online status of profiles the user follows
-    // This dramatically reduces the number of documents watched and snapshot triggers
-    const following = profile.social?.following || [];
-    if (following.length === 0) {
-      setOnlineUsers(new Set());
-      return;
-    }
+    // Listen to all online profiles in real time
+    const q = query(
+      collection(db, 'profiles'),
+      where('status', '==', 'online'),
+      limit(100)
+    );
 
-    // Firestore 'in' query supports up to 30 items
-    const chunks = [];
-    for (let i = 0; i < following.length; i += 30) {
-      chunks.push(following.slice(i, i + 30));
-    }
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const now = Date.now();
+      const active = new Set<string>();
+      onlineUsersMap.current.clear();
 
-    const unsubs = chunks.map(chunk => {
-      const q = query(
-        collection(db, 'profiles'), 
-        where('id', 'in', chunk),
-        where('status', '==', 'online')
-      );
-      return onSnapshot(q, (snap) => {
-        chunk.forEach(id => onlineUsersMap.current.delete(id));
-        snap.docs.forEach(docSnap => {
-          const data = docSnap.data();
-          if (data.status === 'offline') {
-             onlineUsersMap.current.delete(docSnap.id);
-          } else {
-             const lastSeen = data.lastSeen?.toMillis ? data.lastSeen.toMillis() : Date.now();
-             onlineUsersMap.current.set(docSnap.id, lastSeen);
+      snap.docs.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.status === 'online') {
+          const lastSeen = extractTimestampMs(data.lastSeen) || extractTimestampMs(data.lastActiveAt);
+          // Server-time threshold: active within 180 seconds (3 mins)
+          if (lastSeen > 0 && (now - lastSeen < 180000)) {
+            onlineUsersMap.current.set(docSnap.id, lastSeen);
+            active.add(docSnap.id);
           }
-        });
-        
-        const now = Date.now();
-        const active = new Set<string>();
-        onlineUsersMap.current.forEach((lastSeen, id) => {
-          if (now - lastSeen < 120000) { // 2 minutes
-            active.add(id);
-          }
-        });
-        setOnlineUsers(active);
-      }, (error) => handleFirestoreError(error, OperationType.LIST, 'online_profiles'));
-    });
+        }
+      });
+
+      setOnlineUsers(active);
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'online_profiles'));
 
     const cleanupInterval = setInterval(() => {
       let changed = false;
       const now = Date.now();
       const active = new Set<string>();
       onlineUsersMap.current.forEach((lastSeen, id) => {
-        if (now - lastSeen < 120000) {
+        if (now - lastSeen < 180000) {
           active.add(id);
         } else {
           changed = true;
+          onlineUsersMap.current.delete(id);
         }
       });
-      if (changed) {
+      if (changed || active.size !== onlineUsers.size) {
         setOnlineUsers(active);
       }
-    }, 30000);
+    }, 20000);
 
     return () => {
-      unsubs.forEach(unsub => unsub());
+      unsubscribe();
       clearInterval(cleanupInterval);
     };
-  }, [db, user?.uid, profile?.id, JSON.stringify(profile?.social?.following || [])]);
+  }, [db, user?.uid, profile?.id]);
   const lastPresenceUpdate = useRef<number>(0);
   const lastPresenceStatus = useRef<string>('');
 
@@ -2702,7 +2703,8 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       lastPresenceStatus.current = status;
       await updateDoc(doc(db, 'profiles', profile.id), {
         status: status,
-        lastSeen: serverTimestamp()
+        lastSeen: serverTimestamp(),
+        lastActiveAt: serverTimestamp()
       });
     } catch (e) {
       logger.warn("Presence status update failed", e);
@@ -2718,7 +2720,8 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       lastPresenceStatus.current = 'offline';
       await updateDoc(doc(db, 'profiles', profile.id), {
         status: 'offline',
-        lastSeen: serverTimestamp()
+        lastSeen: serverTimestamp(),
+        lastActiveAt: serverTimestamp()
       });
     } catch (e) {
       logger.warn("Offline status update failed", e);
@@ -5094,7 +5097,7 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       addToast({
         title: "Error",
         message: "Failed to remove follower — please try again",
-        type: "error"
+        type: "warning"
       });
     }
   };

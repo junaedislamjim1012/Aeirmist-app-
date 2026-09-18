@@ -299,6 +299,10 @@ class MessagingService {
               uid: targetOwnerUid || targetProfileId
             }
           },
+          latestMessageAt: serverTimestamp(),
+          latestMessageId: messageId,
+          latestMessageSenderId: profile.id,
+          latestMessagePreview: text,
           lastMessage: {
             text,
             senderId: profile.id,
@@ -387,7 +391,11 @@ class MessagingService {
 
     const updates: any = {};
 
-    // ALWAYS update updatedAt and lastMessage so the UI reflects the real-time chat state
+    // ALWAYS update latestMessageAt, latestMessageId, latestMessageSenderId, latestMessagePreview and updatedAt
+    updates.latestMessageAt = serverTimestamp();
+    updates.latestMessageId = metadata.messageId || null;
+    updates.latestMessageSenderId = senderId;
+    updates.latestMessagePreview = text;
     updates.updatedAt = serverTimestamp();
     updates.lastMessage = {
       text,
@@ -622,15 +630,26 @@ class MessagingService {
           );
           
           currentProfileChats.sort((a, b) => {
-            const getMs = (val: any) => {
-              if (!val) return 0;
-              if (typeof val.toMillis === 'function') return val.toMillis();
-              if (val instanceof Date) return val.getTime();
-              if (typeof val === 'number') return val;
-              if (val.seconds) return val.seconds * 1000;
+            const getMs = (chat: any) => {
+              if (!chat) return 0;
+              const t0 = extractTimestampMs(chat.latestMessageAt);
+              if (t0 > 0) return t0;
+              const t1 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt);
+              if (t1 > 0) return t1;
+              const t2 = extractTimestampMs(chat.updatedAt);
+              if (t2 > 0) return t2;
+              const t3 = extractTimestampMs(chat.createdAt);
+              if (t3 > 0) return t3;
               return 0;
             };
-            return getMs(b.updatedAt) - getMs(a.updatedAt);
+            const pinA = typeof a.isPinned === 'boolean' ? a.isPinned : !!a.isPinned?.[profileId];
+            const pinB = typeof b.isPinned === 'boolean' ? b.isPinned : !!b.isPinned?.[profileId];
+            if (pinA && !pinB) return -1;
+            if (!pinA && pinB) return 1;
+            const msA = getMs(a);
+            const msB = getMs(b);
+            if (msB !== msA) return msB - msA;
+            return String(b.id || '').localeCompare(String(a.id || ''));
           });
 
           if (currentProfileChats.length > 0) {
@@ -661,14 +680,16 @@ class MessagingService {
           ...data, 
           id: doc.id,
           hasPendingWrites: hasPending
-        } as Chat;
+        } as unknown as Chat;
       });
 
       const getMs = (chat: any) => {
         if (!chat) return 0;
-        const t1 = extractTimestampMs(chat.updatedAt);
+        const t0 = extractTimestampMs(chat.latestMessageAt);
+        if (t0 > 0) return t0;
+        const t1 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt);
         if (t1 > 0) return t1;
-        const t2 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt);
+        const t2 = extractTimestampMs(chat.updatedAt);
         if (t2 > 0) return t2;
         const t3 = extractTimestampMs(chat.createdAt);
         if (t3 > 0) return t3;
@@ -676,8 +697,17 @@ class MessagingService {
         return 0;
       };
 
-      // Sort client-side by activity descending
-      chats.sort((a, b) => getMs(b) - getMs(a));
+      // Sort client-side by pin priority, then latest activity descending, with deterministic tie-breaker
+      chats.sort((a, b) => {
+        const pinA = typeof a.isPinned === 'boolean' ? a.isPinned : !!a.isPinned?.[profileId];
+        const pinB = typeof b.isPinned === 'boolean' ? b.isPinned : !!b.isPinned?.[profileId];
+        if (pinA && !pinB) return -1;
+        if (!pinA && pinB) return 1;
+        const msA = getMs(a);
+        const msB = getMs(b);
+        if (msB !== msA) return msB - msA;
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
       
       // Filter by profileId if possible, but fallback to all chats if profileIds is missing (legacy support)
       const currentProfileChats = chats.filter(chat => 
