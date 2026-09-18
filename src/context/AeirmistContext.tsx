@@ -2199,13 +2199,16 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         foundProfiles = deduplicateProfiles(foundProfiles);
 
         // Ensure admin account junaed_islam_jim9 always has full admin rights and correct handle
-        if (effectiveUser.email?.toLowerCase() === 'junaedislamjim180@gmail.com' || effectiveUser.uid === 'iFqvwxqejCSte6K24gJe5ZE4NTo1') {
+        const isMainAdminAccount = effectiveUser.email?.toLowerCase() === 'junaedislamjim180@gmail.com' || effectiveUser.uid === 'iFqvwxqejCSte6K24gJe5ZE4NTo1' || effectiveUser.uid === 'doViFWfMXcOoas976z6MO216YNg1';
+        if (isMainAdminAccount) {
           foundProfiles = foundProfiles.map((p: any) => {
             const updated = {
               ...p,
               username: 'junaed_islam_jim9',
               usernameNormalized: 'junaed_islam_jim9',
-              displayName: p.displayName && p.displayName !== 'junaedislamjim180' ? p.displayName : 'Junaed Islam Jim',
+              displayName: 'Junaed Islam Jim',
+              fullName: 'Junaed Islam Jim',
+              name: 'Junaed Islam Jim',
               email: 'junaedislamjim180@gmail.com',
               isAdmin: true,
               role: 'admin',
@@ -2215,6 +2218,9 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               setDoc(doc(db, 'profiles', p.id), {
                 username: 'junaed_islam_jim9',
                 usernameNormalized: 'junaed_islam_jim9',
+                displayName: 'Junaed Islam Jim',
+                fullName: 'Junaed Islam Jim',
+                name: 'Junaed Islam Jim',
                 email: 'junaedislamjim180@gmail.com',
                 isAdmin: true,
                 role: 'admin',
@@ -2223,6 +2229,9 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               setDoc(doc(db, 'users', effectiveUser.uid), {
                 username: 'junaed_islam_jim9',
                 usernameNormalized: 'junaed_islam_jim9',
+                displayName: 'Junaed Islam Jim',
+                fullName: 'Junaed Islam Jim',
+                name: 'Junaed Islam Jim',
                 email: 'junaedislamjim180@gmail.com',
                 isAdmin: true,
                 role: 'admin'
@@ -2231,7 +2240,8 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 uid: effectiveUser.uid,
                 ownerUid: effectiveUser.uid,
                 username: 'junaed_islam_jim9',
-                email: 'junaedislamjim180@gmail.com'
+                email: 'junaedislamjim180@gmail.com',
+                displayName: 'Junaed Islam Jim'
               }, { merge: true }).catch(() => {});
             } catch (e) {}
             return updated;
@@ -2261,12 +2271,14 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         unsubProfile = onSnapshot(q, (snap) => {
           if (!snap.empty) {
             let rawProfiles = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-            if (freshUser.email?.toLowerCase() === 'junaedislamjim180@gmail.com') {
+            if (freshUser.email?.toLowerCase() === 'junaedislamjim180@gmail.com' || freshUser.uid === 'doViFWfMXcOoas976z6MO216YNg1') {
               rawProfiles = rawProfiles.map(p => ({
                 ...p,
                 username: 'junaed_islam_jim9',
                 usernameNormalized: 'junaed_islam_jim9',
-                displayName: p.displayName && p.displayName !== 'junaedislamjim180' ? p.displayName : 'Junaed Islam Jim',
+                displayName: 'Junaed Islam Jim',
+                fullName: 'Junaed Islam Jim',
+                name: 'Junaed Islam Jim',
                 email: 'junaedislamjim180@gmail.com',
                 isAdmin: true,
                 role: 'admin',

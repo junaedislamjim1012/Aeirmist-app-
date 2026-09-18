@@ -1041,11 +1041,40 @@ function AppContent() {
         return l !== 'aeirmist member' && l !== 'aeirmist user' && l !== 'user' && l !== 'member';
       };
 
+      // Explicit check for main admin account: junaedislamjim180@gmail.com / doViFWfMXcOoas976z6MO216YNg1
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      const userUid = user?.uid || '';
+      const profileEmail = (profile?.email || '').toLowerCase().trim();
+      const profileUid = profile?.ownerUid || profile?.uid || profile?.id || '';
+      const profileUsername = (profile?.username || '').toLowerCase().trim();
+
+      if (
+        userEmail === 'junaedislamjim180@gmail.com' ||
+        userUid === 'dovifwfmxcooas976z6mo216yng1' ||
+        userUid === 'doViFWfMXcOoas976z6MO216YNg1' ||
+        profileEmail === 'junaedislamjim180@gmail.com' ||
+        profileUid === 'doViFWfMXcOoas976z6MO216YNg1' ||
+        profileUid === 'profile_doViFWfMXcOoas976z6MO216YNg1' ||
+        profileUsername === 'junaed_islam_jim9'
+      ) {
+        return 'Junaed Islam Jim';
+      }
+
       if (isValid(profile?.displayName)) return profile.displayName.trim();
       if (isValid(profile?.fullName)) return profile.fullName.trim();
       if (isValid(profile?.name)) return profile.name.trim();
 
       if (typeof window !== 'undefined') {
+        try {
+          const rawSession = localStorage.getItem('aeirmist_session');
+          if (rawSession) {
+            const s = JSON.parse(rawSession);
+            if (s?.email?.toLowerCase() === 'junaedislamjim180@gmail.com' || s?.uid === 'doViFWfMXcOoas976z6MO216YNg1' || s?.username === 'junaed_islam_jim9') {
+              return 'Junaed Islam Jim';
+            }
+          }
+        } catch (e) {}
+
         const cachedId = localStorage.getItem('aeirmist_cached_id_name');
         if (isValid(cachedId)) return cachedId!.trim();
 
@@ -1056,6 +1085,9 @@ function AppContent() {
           const rawProfile = localStorage.getItem('aeirmist_cached_profile');
           if (rawProfile) {
             const p = JSON.parse(rawProfile);
+            if (p?.email?.toLowerCase() === 'junaedislamjim180@gmail.com' || p?.uid === 'doViFWfMXcOoas976z6MO216YNg1' || p?.username === 'junaed_islam_jim9') {
+              return 'Junaed Islam Jim';
+            }
             if (isValid(p?.displayName)) return p.displayName.trim();
             if (isValid(p?.fullName)) return p.fullName.trim();
             if (isValid(p?.name)) return p.name.trim();
