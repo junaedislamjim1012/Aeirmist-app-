@@ -62,13 +62,16 @@ export const useInboxData = (allowedAuthorIds?: string[]) => {
           // Exclude notes explicitly hidden from current user
           if (profile?.id && (note.hiddenFrom || []).includes(profile.id)) return false;
 
-          // Check if author is in my following list or is me
-          if (!followingWithMe.includes(note.authorId)) return false;
-          
-          // Privacy Filtering
+          // My own note
           if (note.authorId === profile.id) return true;
+
+          // Public notes are visible to all users (Instagram public notes model)
           if (note.audience === 'public') return true;
-          if (note.audience === 'followers') return true; // Since I follow them (checked above)
+
+          // Followers only note -> must follow author
+          if (note.audience === 'followers' && followingWithMe.includes(note.authorId)) return true;
+
+          // Close friends note -> must be on visibleTo list
           if (note.audience === 'closeFriends') {
              return (note.visibleTo || []).includes(profile.id);
           }
@@ -128,7 +131,17 @@ export const useInboxData = (allowedAuthorIds?: string[]) => {
     mediaUrl?: string, 
     mediaType?: 'image' | 'video', 
     hiddenFrom: string[] = [],
-    musicData?: { title?: string; artist?: string; url?: string; coverUrl?: string; spotifyUrl?: string }
+    musicData?: { 
+      title?: string; 
+      artist?: string; 
+      url?: string; 
+      coverUrl?: string; 
+      spotifyUrl?: string;
+      clipStart?: number;
+      clipDuration?: number;
+      style?: 'badge' | 'lyrics' | 'disc';
+      lyrics?: string;
+    }
   ) => {
     if (!db || !user || !profile || !canWrite('createNote', 10000)) return;
     try {
@@ -146,6 +159,10 @@ export const useInboxData = (allowedAuthorIds?: string[]) => {
         musicUrl: musicData?.url || null,
         musicCover: musicData?.coverUrl || null,
         spotifyUrl: musicData?.spotifyUrl || null,
+        musicClipStart: musicData?.clipStart ?? 0,
+        musicClipDuration: musicData?.clipDuration ?? 30,
+        musicStyle: musicData?.style || 'badge',
+        musicLyrics: musicData?.lyrics || null,
         mediaUrl: mediaUrl || null,
         mediaType: mediaType || null,
         createdAt: serverTimestamp(),

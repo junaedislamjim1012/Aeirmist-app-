@@ -4,7 +4,9 @@
   "version": "2.0.0",
   "scripts": {
     "build": "cd imported_repo && npm run build",
-    "lint": "cd imported_repo && npm run lint"
+    "build:pages": "cd imported_repo && npm run build:pages",
+    "lint": "cd imported_repo && npm run lint",
+    "cap:sync": "cd imported_repo && npm run build:native"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

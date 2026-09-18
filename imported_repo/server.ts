@@ -515,7 +515,7 @@ async function startServer() {
       }
 
       const result = await ai.models.generateContent({
-        model: "gemini-2.0-flash", 
+        model: "gemini-2.0-flash",
         contents: contents as any
       });
 

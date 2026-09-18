@@ -6,12 +6,8 @@ import {
   Search, 
   Sparkles, 
   X, 
-  LayoutGrid, 
-  Clock, 
-  ShieldCheck,
-  Zap,
-  Filter,
   CheckCircle2,
+  CheckCheck,
   Brain,
   Mail,
   ShoppingBag,
@@ -24,7 +20,7 @@ import {
   RotateCcw,
   Check,
   AlertTriangle,
-  Compass
+  ShieldCheck
 } from 'lucide-react';
 import { NotificationItem } from './NotificationItem';
 import type { Notification } from '../../types/notifications';
@@ -60,26 +56,10 @@ interface NotificationCenterProps {
   onUserClick?: (user: any) => void;
 }
 
-// Priority classifier
-const getPriority = (type: string): 'high' | 'normal' => {
-  const t = String(type).toLowerCase();
-  const highPriorityTypes = [
-    'follow_request', 
-    'payment_received', 
-    'order_status_change', 
-    'security_alert', 
-    'mention', 
-    'story_mention',
-    'system_verification'
-  ];
-  return highPriorityTypes.includes(t) ? 'high' : 'normal';
-};
-
 // Map database notification types into correct visual categories
 const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace' | 'videos' | 'stories' | 'system' => {
   const typeStr = String(type).toLowerCase();
   
-  // Messages Category
   if ([
     'message', 'message_media', 'message_voice', 'message_video', 
     'call', 'call_missed', 'video_call_missed', 'store_message', 'message_received'
@@ -87,7 +67,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'messages';
   }
   
-  // Marketplace Category
   if ([
     'store_follow', 'review_new', 'store_review', 'product_like', 'product_save', 
     'product_report', 'stock_low', 'product_comment', 'marketplace'
@@ -95,7 +74,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'marketplace';
   }
   
-  // Videos Category
   if ([
     'video_milestone', 'video_comment', 'video_comment_reply', 
     'video_share', 'video_save', 'video_follower'
@@ -103,7 +81,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'videos';
   }
   
-  // Stories Category
   if ([
     'story_reply', 'story_react', 'story_mention', 'story_share', 
     'ngl_story_reply', 'ngl_reply', 'story'
@@ -111,7 +88,6 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'stories';
   }
   
-  // System Category
   if ([
     'security', 'system', 'verification', 'system_verification', 
     'username_change', 'password_change', 'security_login', 'profile_update', 
@@ -120,20 +96,8 @@ const getCategoryForType = (type: string): 'social' | 'messages' | 'marketplace'
     return 'system';
   }
   
-  // Social Category
   return 'social';
 };
-
-const tabsConfig = [
-  { id: 'all', label: 'All', icon: <LayoutGrid size={11} /> },
-  { id: 'social', label: 'Social', icon: <UserPlus size={11} /> },
-  { id: 'marketplace', label: 'Market', icon: <ShoppingBag size={11} /> },
-  { id: 'videos', label: 'Videos', icon: <Video size={11} /> },
-  { id: 'stories', label: 'Stories', icon: <Tv size={11} /> },
-  { id: 'system', label: 'System', icon: <ShieldCheck size={11} /> }
-] as const;
-
-type ActiveTabsType = 'all' | 'social' | 'marketplace' | 'videos' | 'stories' | 'system';
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({ 
   onClose, 
@@ -143,15 +107,11 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   onUserClick
 }) => {
   const centerRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTabsType>('all');
   const [notifications, setNotifications] = useState<any[]>([]);
-  const { db, user, profile, suggestedUsers, canWrite, acceptFollowRequest, rejectFollowRequest, addToast } = useAeirmist();
+  const { db, user, profile, canWrite, acceptFollowRequest, rejectFollowRequest, toggleFollow, isFollowing, addToast } = useAeirmist();
   const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [priorityFilter, setPriorityFilter] = useState(false);
-
-  // Load custom user mute rules from Firestore
   const [mutedUsernames, setMutedUsernames] = useState<string[]>([]);
 
   useEffect(() => {
@@ -177,28 +137,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   });
 
-  // Calculate unread categories count count for pills
-  const getUnreadCounts = () => {
-    const counts = {
-      all: 0,
-      social: 0,
-      messages: 0,
-      marketplace: 0,
-      videos: 0,
-      stories: 0,
-      system: 0
-    };
-    notifications.forEach(n => {
-      if (!n.isRead && !n.read) {
-        counts.all++;
-        const cat = getCategoryForType(n.type);
-        counts[cat]++;
-      }
-    });
-    return counts;
-  };
-
-  const unreadCounts = getUnreadCounts();
+  // Calculate total unread count
+  const unreadCount = notifications.filter(n => !n.isRead && !n.read).length;
 
   const handleAction = async (notifId: string, action: string) => {
     const notif = notifications.find(n => n.id === notifId);
@@ -220,7 +160,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           await acceptFollowRequest(requestId, fromId);
           await markRead(notifId);
           addToast?.({
-            title: "Request Accepted",
+            title: "Request Confirmed",
             message: `You accepted the follow request from @${notif.user?.username || 'user'}.`,
             type: "success"
           });
@@ -231,7 +171,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           await rejectFollowRequest(requestId);
           await markRead(notifId);
           addToast?.({
-            title: "Request Declined",
+            title: "Request Removed",
             message: `You declined the follow request from @${notif.user?.username || 'user'}.`,
             type: "info"
           });
@@ -256,7 +196,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       collection(db, 'notifications'),
       where('userId', 'in', [profile?.id, user.uid].filter(Boolean)),
       orderBy('createdAt', 'desc'),
-      limit(40)
+      limit(50)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -268,15 +208,24 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           
           if (isMessage) return null;
 
+          const isSecurityAlert = String(d.type || '').toLowerCase().includes('security') || 
+                                  String(d.type || '').toLowerCase().includes('device') ||
+                                  String(d.type || '').toLowerCase().includes('login');
+
           return {
             id: doc.id,
             ...d,
             isRead: d.read,
-            timestampMs: d.createdAt?.toMillis() || Date.now(),
-            user: {
-              name: d.user?.name || d.fromUser?.displayName || 'Aeirmist Citizen',
-              avatar: getAvatarUrl(d.user?.avatar || d.fromUser?.photoURL, doc.id),
-              username: d.user?.username || (d.fromUser?.displayName ? d.fromUser.displayName.toLowerCase().replace(/\s+/g, '') : 'aeirmist_network'),
+            timestampMs: d.createdAt?.toMillis ? d.createdAt.toMillis() : (d.createdAt ? new Date(d.createdAt).getTime() : Date.now()),
+            user: isSecurityAlert ? {
+              name: 'Security Alert',
+              avatar: null,
+              username: 'security',
+              isVerified: true
+            } : {
+              name: d.user?.name || d.fromUser?.displayName || d.metadata?.senderName || 'Aeirmist User',
+              avatar: d.user?.avatar || d.fromUser?.photoURL || d.metadata?.senderPhoto || null,
+              username: d.user?.username || (d.fromUser?.displayName ? d.fromUser.displayName.toLowerCase().replace(/\s+/g, '') : (d.metadata?.senderUsername || 'user')),
               isVerified: d.user?.isVerified || false
             }
           };
@@ -320,9 +269,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     };
   }, [onClose]);
 
-  // Filter logic including query strings, muted users, and hidden categories
-  const getFilteredNotifications = () => {
-    let list = notifications.filter(n => {
+  // Serial list: Filter out muted and hidden types, and order serially by time
+  const getSerialNotifications = () => {
+    return notifications.filter(n => {
       // 1. Muted users check
       const username = n.user?.username || n.user?.name || '';
       if (mutedUsernames.includes(username)) return false;
@@ -330,18 +279,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       // 2. Hidden type rules check
       if (hiddenTypes.includes(n.type)) return false;
 
-      // 3. Tab matching check
-      if (activeTab !== 'all') {
-        const cat = getCategoryForType(n.type);
-        if (cat !== activeTab) return false;
-      }
-
-      // 4. Priority filter
-      if (priorityFilter) {
-        if (getPriority(n.type) !== 'high') return false;
-      }
-
-      // 5. Search query filter
+      // 3. Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const content = (n.message || n.content || '').toLowerCase();
@@ -350,90 +288,14 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
       }
 
       return true;
-    });
-
-    // 6. Grouping Logic
-    const grouped: any[] = [];
-    const handled = new Set<string>();
-    const groupableTypes = ['like', 'comment', 'follow', 'post_like', 'comment_like', 'product_like'];
-
-    for (let i = 0; i < list.length; i++) {
-      const n = list[i];
-      if (handled.has(n.id)) continue;
-
-      const type = String(n.type).toLowerCase();
-      const targetId = n.metadata?.postId || n.targetId || (type === 'follow' ? 'global_follow' : null);
-
-      if (groupableTypes.includes(type) && targetId) {
-        const window24h = 24 * 60 * 60 * 1000;
-        const group = [n];
-        handled.add(n.id);
-
-        for (let j = i + 1; j < list.length; j++) {
-          const next = list[j];
-          if (handled.has(next.id)) break;
-
-          const nextType = String(next.type).toLowerCase();
-          const nextTargetId = next.metadata?.postId || next.targetId || (nextType === 'follow' ? 'global_follow' : null);
-
-          if (nextType === type && nextTargetId === targetId) {
-            const timeDiff = Math.abs(n.timestampMs - next.timestampMs);
-            if (timeDiff <= window24h) {
-              group.push(next);
-              handled.add(next.id);
-            } else {
-              break;
-            }
-          } else {
-            break;
-          }
-        }
-
-        if (group.length > 1) {
-          grouped.push({
-            ...n,
-            groupedCount: group.length
-          });
-        } else {
-          grouped.push(n);
-        }
-      } else {
-        grouped.push(n);
-        handled.add(n.id);
-      }
-    }
-
-    return grouped;
+    }).sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
   };
 
-  const filteredNotifications = getFilteredNotifications();
-
-  // Automatically mark unread notifications as read when NotificationCenter is open and viewed
-  useEffect(() => {
-    if (!db || !user) return;
-
-    const unreadItems = notifications.filter(n => !(n.read || n.isRead));
-    if (unreadItems.length === 0) return;
-
-    const timer = setTimeout(async () => {
-      setNotifications(prev => prev.map(n => ({ ...n, read: true, isRead: true })));
-      try {
-        const batch = writeBatch(db);
-        unreadItems.forEach(item => {
-          batch.update(doc(db, 'notifications', item.id), { read: true });
-        });
-        await batch.commit();
-      } catch (e) {
-        logger.warn("Auto mark read failed:", e);
-      }
-    }, 1200);
-
-    return () => clearTimeout(timer);
-  }, [notifications.length, db, user]);
+  const serialNotifications = getSerialNotifications();
 
   const markAllRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true, isRead: true })));
-    if (!db || !user || !canWrite('mark_all_read', 10000)) return;
+    if (!db || !user || !canWrite('mark_all_read', 5000)) return;
     try {
       const batch = writeBatch(db);
       notifications.forEach(n => {
@@ -486,23 +348,14 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     localStorage.setItem('aeirmist_hidden_notification_types', JSON.stringify(list));
   };
 
-  const clearFilters = async () => {
-    setHiddenTypes([]);
-    localStorage.removeItem('aeirmist_hidden_notification_types');
-    
-    if (db && profile?.id) {
-      setMutedUsernames([]);
-      try {
-        await updateDoc(doc(db, 'profiles', profile.id, 'settings', 'mutedUsers'), {
-          mutedUsernames: []
-        });
-      } catch (err) {
-        logger.error(err);
-      }
+  // Follow back toggle
+  const handleFollowToggle = async (targetId: string) => {
+    if (toggleFollow) {
+      await toggleFollow(targetId);
     }
   };
 
-  // Navigates directly based on notification source mapping
+  // View source click
   const handleViewSource = (notif: any) => {
     if (!onNavigate) return;
     
@@ -512,7 +365,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     } else if (cat === 'videos') {
       onNavigate('videos');
     } else if (cat === 'marketplace') {
-      onNavigate('discover'); // Marketplace feed fits under activity discovery
+      onNavigate('discover');
     } else if (cat === 'stories' || cat === 'social') {
       onNavigate('feed');
     } else if (cat === 'system') {
@@ -525,188 +378,94 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   return (
     <>
-      {/* Dark backdrop overlay for closing panel on tap */}
+      {/* Dark backdrop overlay */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed inset-0 z-[999] bg-black/70 backdrop-blur-md"
+        className="fixed inset-0 z-[999] bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
+
       <motion.div 
         ref={centerRef}
         initial={{ opacity: 0, x: '100%' }}
         animate={{ opacity: 1, x: 0 }}
         exit={{ opacity: 0, x: '100%' }}
-        transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-        className="fixed inset-y-0 right-0 w-full md:w-[465px] z-[1000] bg-neutral-950/98 backdrop-blur-3xl border-l border-white/15 shadow-[-25px_0_75px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col"
+        transition={{ type: 'spring', damping: 26, stiffness: 240 }}
+        className="fixed inset-y-0 right-0 w-full sm:w-[480px] md:w-[460px] z-[1000] bg-[#121316] border-l border-white/[0.08] shadow-[-20px_0_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden text-[#E4E6EB]"
       >
-      {/* Header Panel */}
-      <header className="p-3.5 sm:p-5 border-b border-white/15 bg-black/60 backdrop-blur-3xl relative z-10">
-        <div className="flex items-center justify-between gap-2 min-w-0">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-aeirmist-cyan/20 flex items-center justify-center text-aeirmist-cyan border border-aeirmist-cyan/40 shadow-[0_0_15px_rgba(0,242,255,0.3)] shrink-0">
-              <Bell size={17} className="animate-pulse" />
+        {/* Header */}
+        <header className="px-4 py-3.5 pt-[calc(0.875rem+env(safe-area-inset-top,0px))] md:pt-3.5 border-b border-white/[0.08] bg-[#18191C]/90 backdrop-blur-xl relative z-10">
+          <div className="flex items-center justify-between gap-3 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <h2 className="text-xl font-bold tracking-tight text-white leading-none">Notifications</h2>
+              {unreadCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-[#1877F2] text-white text-xs font-bold shadow-sm">
+                  {unreadCount}
+                </span>
+              )}
             </div>
-            <div className="min-w-0">
-              <h2 className="text-xs sm:text-base font-black tracking-wider sm:tracking-widest text-white uppercase leading-none truncate">Notifications</h2>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button 
-              onClick={markAllRead} 
-              className="px-2 sm:px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-white hover:text-aeirmist-cyan hover:bg-white/20 transition-all shrink-0 cursor-pointer whitespace-nowrap"
-            >
-              Mark<span className="hidden sm:inline"> All</span> Read
-            </button>
-            <button 
-              onClick={onSettingsClick}
-              className="p-1.5 sm:p-2 rounded-xl bg-white/10 border border-white/15 text-white/70 hover:text-white hover:bg-white/20 transition-all cursor-pointer shrink-0"
-              title="System Configuration"
-            >
-              <Settings size={15} />
-            </button>
-            <button 
-              onClick={onClose} 
-              className="p-1.5 sm:p-2 rounded-xl bg-white/10 border border-white/15 text-white/70 hover:text-aeirmist-magenta hover:border-aeirmist-magenta/40 transition-all cursor-pointer shrink-0"
-              title="Close"
-            >
-              <X size={15} />
-            </button>
-          </div>
-        </div>
-      </header>
 
-      {/* Categories Horizontal Scrolling Pill Navigation Container */}
-      <div className="px-2 sm:px-3 border-b border-white/15 bg-black/40 overflow-x-auto no-scrollbar flex items-center shrink-0">
-        <div className="flex items-center gap-1 sm:gap-1.5 py-2.5 pr-2">
-          <button 
-            onClick={() => setPriorityFilter(!priorityFilter)}
-            className={`py-1 px-2 sm:px-2.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-wider relative transition-all duration-300 flex items-center gap-1 shrink-0 cursor-pointer ${
-              priorityFilter 
-                ? 'bg-aeirmist-cyan text-black border border-aeirmist-cyan shadow-[0_0_12px_rgba(0,242,255,0.4)] font-black' 
-                : 'bg-white/10 border border-white/15 text-white/80 hover:text-white hover:bg-white/20'
-            }`}
-          >
-            <Zap size={11} className={priorityFilter ? 'animate-pulse' : ''} />
-            Priority
-          </button>
-          <div className="w-px h-3.5 bg-white/20 mx-0.5 shrink-0" />
-          {tabsConfig.map(tab => {
-            const count = unreadCounts[tab.id];
-            const isActive = activeTab === tab.id;
-            return (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {unreadCount > 0 && (
+                <button 
+                  type="button"
+                  onClick={markAllRead} 
+                  className="px-2.5 py-1.5 rounded-lg hover:bg-white/[0.08] text-xs font-semibold text-[#4599FF] hover:text-[#70B4FF] flex items-center gap-1.5 transition-colors cursor-pointer"
+                  title="Mark all as read"
+                >
+                  <CheckCheck size={15} />
+                  <span className="hidden sm:inline">Mark all read</span>
+                </button>
+              )}
+              
               <button 
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-1 px-2 sm:px-2.5 rounded-full text-[9px] sm:text-[10px] font-black uppercase tracking-tight sm:tracking-wider relative transition-all duration-300 flex items-center gap-1 shrink-0 cursor-pointer ${
-                  isActive 
-                    ? 'bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-[0_0_12px_rgba(59,130,246,0.3)]' 
-                    : 'bg-white/10 border border-white/15 text-white/80 hover:text-white hover:bg-white/20'
-                }`}
+                type="button"
+                onClick={onClose} 
+                className="w-8 h-8 rounded-full bg-[#2A2B30] hover:bg-[#3A3B40] text-[#E4E6EB] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                title="Close"
               >
-                {tab.icon}
-                <span>{tab.label}</span>
-                {count > 0 && (
-                  <span className="w-3.5 h-3.5 ml-0.5 rounded-full bg-blue-500 text-white text-[8px] font-bold flex items-center justify-center shadow-[0_0_8px_rgba(59,130,246,0.6)] shrink-0">
-                    {count}
-                  </span>
-                )}
+                <X size={17} />
               </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Notification Logs List */}
-      <div className="flex-1 overflow-y-auto no-scrollbar p-5 space-y-3.5 bg-neutral-950/80">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">
-            {activeTab === 'all' ? 'Unified Feeds logs' : `${activeTab} category`}
-          </span>
-
-          <div className="flex items-center gap-2">
-            {(mutedUsernames.length > 0 || hiddenTypes.length > 0) && (
-              <button 
-                onClick={clearFilters}
-                className="text-[9px] font-black uppercase tracking-wider text-rose-400 hover:underline flex items-center gap-1"
-                title="Reset active filters"
-              >
-                <RotateCcw size={9} />
-                Reset Rules ({mutedUsernames.length + hiddenTypes.length})
-              </button>
-            )}
-            <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
-          </div>
-        </div>
-        
-        {filteredNotifications.length > 0 ? (
-          filteredNotifications.map((notif) => (
-            <NotificationItem 
-              key={notif.id} 
-              notification={notif} 
-              onMarkRead={() => markRead(notif.id)} 
-              onDelete={deleteNotification}
-              onHideType={handleHideType}
-              onMuteUser={handleMuteUser}
-              onViewSource={handleViewSource}
-              onAction={handleAction}
-              isProcessing={processingIds.has(notif.id)}
-              onUserClick={onUserClick}
-            />
-          ))
-        ) : (
-          <div className="h-full flex flex-col items-center justify-center text-center py-20 px-6">
-            <div className="w-14 h-14 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center mb-4 text-aeirmist-cyan">
-              <Bell size={24} />
             </div>
-            <p className="text-sm font-bold text-white mb-1">No Notifications Yet</p>
-            <p className="text-xs text-white/60 max-w-xs leading-relaxed">
-              When you receive likes, comments, or direct messages, they will appear here.
-            </p>
           </div>
-        )}
+        </header>
 
-        {/* Dynamic footer visual tag */}
-        <div className="pt-6 pb-2 text-center select-none opacity-40">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-[9px] font-black tracking-widest uppercase text-white/70">
-            <Brain size={10} />
-            Connection Secure
-          </div>
+        {/* Notifications Serial Scroll List (No Filter Bar, Pure Serial Flow) */}
+        <div className="flex-1 overflow-y-auto no-scrollbar p-2 sm:p-3 space-y-2 bg-[#121316]">
+          {serialNotifications.length > 0 ? (
+            serialNotifications.map((notif) => (
+              <NotificationItem 
+                key={notif.id} 
+                notification={notif} 
+                onMarkRead={() => markRead(notif.id)} 
+                onDelete={deleteNotification}
+                onHideType={handleHideType}
+                onMuteUser={handleMuteUser}
+                onViewSource={handleViewSource}
+                onAction={handleAction}
+                isProcessing={processingIds.has(notif.id)}
+                onUserClick={onUserClick}
+                isFollowingUser={isFollowing ? isFollowing(notif.fromUserId || notif.user?.id) : false}
+                onFollowToggle={handleFollowToggle}
+              />
+            ))
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-center py-24 px-6">
+              <div className="w-16 h-16 rounded-full bg-[#1E1F24] border border-white/10 flex items-center justify-center mb-4 text-[#1877F2]">
+                <Bell size={28} />
+              </div>
+              <p className="text-base font-bold text-white mb-1">No notifications</p>
+              <p className="text-xs text-[#8A8D91] max-w-xs leading-relaxed">
+                When you receive likes, comments, or follow requests, they will appear here serially.
+              </p>
+            </div>
+          )}
         </div>
-      </div>
-
-
-    </motion.div>
+      </motion.div>
     </>
-  );
-};
-
-// Compact Simulator Pills
-const SimulatorPill = ({ label, color, onClick }: { label: string; color: string; onClick: () => void }) => {
-  return (
-    <button 
-      onClick={onClick}
-      className={`px-2.5 py-1 text-[8px] font-black uppercase tracking-wider rounded-lg border border-white/5 transition-all active:scale-95 cursor-pointer shrink-0 ${color}`}
-    >
-      {label}
-    </button>
-  );
-};
-
-const InsightCard = ({ label, value, color }: { label: string; value: string; color: 'magenta' | 'cyan' | 'lime' }) => {
-  const colorClass = {
-    'magenta': 'text-aeirmist-magenta drop-shadow-[0_0_8px_rgba(255,0,234,0.4)]',
-    'cyan': 'text-aeirmist-cyan drop-shadow-[0_0_8px_rgba(0,242,255,0.4)]',
-    'lime': 'text-aeirmist-lime drop-shadow-[0_0_8px_rgba(178,255,0,0.4)]'
-  }[color];
-
-  return (
-    <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-center flex flex-col justify-center shadow-lg">
-      <div className={`text-xs font-black ${colorClass}`}>{value}</div>
-      <div className="text-[8px] font-black uppercase tracking-wider text-white/30 mt-1">{label}</div>
-    </div>
   );
 };
 

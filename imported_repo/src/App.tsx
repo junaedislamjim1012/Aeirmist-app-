@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, lazy, Suspense, useEffect, useRef } from 'react';
+import React, { useState, lazy, Suspense, useEffect, useRef, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Navigation, Tab } from './components/Navigation';
@@ -22,7 +22,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Sparkles, Zap, Lock, AlertCircle, Clock } from 'lucide-react';
 import { AeirmistLogo } from './components/ui/AeirmistLogo';
 import { ReportProvider } from './components/reporting/ReportContext';
-import { ToastNotification } from './components/notifications/ToastNotification';
+import { logger } from '@/src/utils/logger';
+import { PostDetailView } from './components/feed/PostDetailView';
 import { PermissionManager } from './components/ui/PermissionManager';
 import { ResonanceTracker } from './components/ResonanceTracker';
 import { SEO } from './components/ui/SEO';
@@ -30,8 +31,7 @@ import { analytics } from './services/AnalyticsService';
 import { followRecommService } from './services/FollowRecommendationService';
 import { NetworkStatusProvider } from './context/NetworkStatusContext';
 import { NetworkBanner } from './components/ui/NetworkBanner';
-import { PostDetailView } from './components/feed/PostDetailView';
-import { logger } from '@/src/utils/logger';
+import { ToastNotification } from './components/notifications/ToastNotification';
 
 // Aeirmist Core Component Architecture
 function toMathBoldScript(text: string): string {
@@ -115,6 +115,7 @@ const PairingFailedScreen = lazyWithRetry(() => import('./components/auth/SetupS
 const PurgeScreen = lazyWithRetry(() => import('./components/auth/SetupScreens').then((m: any) => ({ default: m.PurgeScreen || m.default })));
 const DeactivatedScreen = lazyWithRetry(() => import('./components/auth/SetupScreens').then((m: any) => ({ default: m.DeactivatedScreen || m.default })));
 const BannedScreen = lazyWithRetry(() => import('./components/auth/BannedScreen').then((m: any) => ({ default: m.BannedScreen || m.default })));
+
 
 type PreloadComponent = 'feed' | 'messenger' | 'discover' | 'profile' | 'settings' | 'videos' | 'dashboard' | 'notifications' | 'admin';
 
@@ -231,7 +232,8 @@ function AppContent() {
     cancelDeleteAccount,
     storyUpload,
     needsPasswordOnboarding,
-    featureFlags
+    featureFlags,
+    addToast
   } = useAeirmist();
   const { isLoading: isThemeLoading } = useTheme();
 
@@ -245,6 +247,7 @@ function AppContent() {
   const [viewingProfile, setViewingProfile] = useState<any>(null);
   const [messageRecipient, setMessageRecipient] = useState<any>(null);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<string | null>(null);
 
   useEffect(() => {
     const isUserPinned = localStorage.getItem('aeirmist_sidebar_user_pinned') === 'true';
@@ -272,6 +275,169 @@ function AppContent() {
       setShowSafeExit(false);
     }
   }, [loading, user, profile, needsUsername]);
+
+  // Native Android Hardware Back Button Integration & Navigation Stack
+  const lastBackPressRef = useRef<number>(0);
+  const tabHistoryStackRef = useRef<Tab[]>(['feed']);
+
+  // Keep a synchronous, always-up-to-date reference of navigation state
+  const navStateRef = useRef<any>({});
+  useEffect(() => {
+    navStateRef.current = {
+      viewingPostId,
+      viewingVideoId,
+      isPosting,
+      isNotificationsOpen,
+      isAccountSwitcherOpen,
+      cameraConfig,
+      settingsSection,
+      viewingProfile,
+      viewingStoreId,
+      viewingProductId,
+      messageRecipient,
+      activeTab,
+      storyState,
+      addToast
+    };
+  });
+
+  // Track tab history for back navigation between pages
+  useEffect(() => {
+    if (isPoppingRef.current) return;
+    const stack = tabHistoryStackRef.current;
+    if (stack[stack.length - 1] !== activeTab) {
+      stack.push(activeTab);
+      if (stack.length > 40) stack.shift();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    let backListener: any;
+    let isMounted = true;
+    
+    const setupListener = async () => {
+      try {
+        const { App: CapApp } = await import('@capacitor/app');
+        if (!isMounted) return;
+
+        backListener = await CapApp.addListener('backButton', ({ canGoBack }: any) => {
+          const s = navStateRef.current;
+
+          // 1. Stories open
+          if (s.storyState?.activeStoryGroup || s.storyState?.isStudioOpen || s.storyState?.isCreatingNote) {
+            setStoryState({ activeStoryGroup: null, isStudioOpen: false, isCreatingNote: false });
+            window.dispatchEvent(new CustomEvent('aeirmist-story-close'));
+            return;
+          }
+
+          // 2. Post detail modal is open
+          if (s.viewingPostId) {
+            setViewingPostId(null);
+            return;
+          }
+
+          // 3. Video modal / detail is open
+          if (s.viewingVideoId) {
+            setViewingVideoId(null);
+            return;
+          }
+
+          // 4. Create Post studio is open
+          if (s.isPosting) {
+            setIsPosting(false);
+            return;
+          }
+
+          // 5. Notification Center is open
+          if (s.isNotificationsOpen) {
+            setIsNotificationsOpen(false);
+            return;
+          }
+
+          // 6. Account switcher is open
+          if (s.isAccountSwitcherOpen) {
+            setIsAccountSwitcherOpen(false);
+            return;
+          }
+
+          // 7. Camera is open
+          if (s.cameraConfig?.isOpen) {
+            setCameraConfig(null);
+            return;
+          }
+
+          // 8. Settings sub-section is open
+          if (s.settingsSection) {
+            setSettingsSection(null);
+            return;
+          }
+
+          // 9. Viewing a store or product
+          if (s.viewingStoreId || s.viewingProductId) {
+            setViewingStoreId(null);
+            setViewingProductId(null);
+            return;
+          }
+
+          // 10. Specific chat in Messenger
+          if (s.messageRecipient) {
+            setMessageRecipient(null);
+            return;
+          }
+
+          // 11. Viewing another user's profile
+          if (s.viewingProfile) {
+            setViewingProfile(null);
+            return;
+          }
+
+          // 12. If we have browser history entries created by app navigation
+          if (window.history.length > 1 && window.history.state?._appNav) {
+            window.history.back();
+            return;
+          }
+
+          // 13. If user navigated through different tabs, pop back to previous tab
+          if (tabHistoryStackRef.current.length > 1) {
+            tabHistoryStackRef.current.pop(); // Remove current tab
+            const previousTab = tabHistoryStackRef.current[tabHistoryStackRef.current.length - 1] || 'feed';
+            setActiveTab(previousTab);
+            return;
+          }
+
+          // 14. If on any tab other than feed, return to feed
+          if (s.activeTab !== 'feed') {
+            setActiveTab('feed');
+            return;
+          }
+
+          // 15. At root home feed: double back press within 2000ms to exit app
+          const now = Date.now();
+          if (now - lastBackPressRef.current < 2000) {
+            CapApp.exitApp();
+          } else {
+            lastBackPressRef.current = now;
+            s.addToast?.({
+              title: 'Exit Aeirmist',
+              message: 'Press back again to exit.',
+              type: 'info'
+            });
+          }
+        });
+      } catch (err) {
+        // Not in Capacitor native environment
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      isMounted = false;
+      if (backListener?.remove) {
+        backListener.remove();
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     const handleNavigate = (e: any) => {
@@ -358,6 +524,9 @@ function AppContent() {
     if (tab !== 'messenger') {
       setMessageRecipient(null);
     }
+    if (tab !== 'settings') {
+      setSettingsSection(null);
+    }
     setActiveTab(tab);
   };
 
@@ -391,82 +560,170 @@ function AppContent() {
     vVideoId: string | null,
     vStoreId: string | null,
     vProductId: string | null,
-    vChatUid: string | null
+    vChatUid: string | null,
+    vStoryUserId: string | null = null,
+    vSettingsSection: string | null = null,
+    vIsPosting: boolean = false
   ): string => {
-    if (vPostId) return `/p/${vPostId}`;
-    if (vVideoId) return `/v/${vVideoId}`;
+    if (vPostId) return `/post/${vPostId}`;
+    if (vVideoId) return `/video/${vVideoId}`;
+    if (vStoryUserId) return `/story/${vStoryUserId}`;
     if (vStoreId) return `/store/${vStoreId}`;
     if (vProductId) return `/product/${vProductId}`;
     if (isNotifsOpen) return '/notifications';
+    if (vIsPosting) return '/create-post';
+
     if (tab === 'profile') {
       if (vProfile?.username) return `/@${vProfile.username}`;
       if (vProfile?.id) return `/u/${vProfile.id}`;
       return '/profile';
     }
+
+    if (tab === 'settings') {
+      if (vSettingsSection) return `/settings/${vSettingsSection}`;
+      return '/settings';
+    }
+
     switch (tab) {
       case 'feed': return '/';
       case 'discover': return '/explore';
-      case 'videos': return '/reels';
+      case 'videos': return '/videos';
       case 'messenger': 
         if (vChatUid) return `/messages/${vChatUid}`;
         return '/messages';
-      case 'settings': return '/settings';
-      case 'admin': return '/admin-panel';
+      case 'admin': return '/admin';
       case 'dashboard': return '/dashboard';
       default: return `/${tab}`;
     }
   };
 
   const getInitialStateFromPath = (path: string) => {
-    const cleanPath = path.trim().toLowerCase();
-    if (cleanPath.startsWith('/p/')) {
-      const postId = cleanPath.split('/p/')[1]?.split('?')[0];
+    const cleanPath = path.trim();
+    const lowerPath = cleanPath.toLowerCase();
+
+    // 1. Posts
+    if (lowerPath.startsWith('/post/') || lowerPath.startsWith('/p/')) {
+      const postId = (lowerPath.startsWith('/post/') 
+        ? cleanPath.substring('/post/'.length) 
+        : cleanPath.substring('/p/'.length)).split('?')[0];
       return { tab: 'feed' as Tab, notifs: false, postId: postId || null };
     }
-    if (cleanPath.startsWith('/v/')) {
-      const videoId = cleanPath.split('/v/')[1]?.split('?')[0];
+
+    // 2. Videos / Reels
+    if (
+      lowerPath.startsWith('/video/') || 
+      lowerPath.startsWith('/videos/') || 
+      lowerPath.startsWith('/v/') || 
+      lowerPath.startsWith('/reel/') || 
+      lowerPath.startsWith('/reels/')
+    ) {
+      let videoId = '';
+      if (lowerPath.startsWith('/video/')) videoId = cleanPath.substring('/video/'.length);
+      else if (lowerPath.startsWith('/videos/')) videoId = cleanPath.substring('/videos/'.length);
+      else if (lowerPath.startsWith('/v/')) videoId = cleanPath.substring('/v/'.length);
+      else if (lowerPath.startsWith('/reel/')) videoId = cleanPath.substring('/reel/'.length);
+      else if (lowerPath.startsWith('/reels/')) videoId = cleanPath.substring('/reels/'.length);
+      videoId = videoId.split('?')[0];
       return { tab: 'videos' as Tab, notifs: false, videoId: videoId || null };
     }
-    if (cleanPath.startsWith('/store/')) {
-      const storeId = cleanPath.split('/store/')[1]?.split('?')[0];
+
+    // 3. Stories
+    if (lowerPath.startsWith('/story/') || lowerPath.startsWith('/stories/')) {
+      const storyId = (lowerPath.startsWith('/story/') 
+        ? cleanPath.substring('/story/'.length) 
+        : cleanPath.substring('/stories/'.length)).split('?')[0];
+      return { tab: 'feed' as Tab, notifs: false, storyUserId: storyId || null };
+    }
+
+    // 4. Stores & Products
+    if (lowerPath.startsWith('/store/')) {
+      const storeId = cleanPath.substring('/store/'.length).split('?')[0];
       return { tab: 'discover' as Tab, notifs: false, storeId: storeId || null };
     }
-    if (cleanPath.startsWith('/product/')) {
-      const productId = cleanPath.split('/product/')[1]?.split('?')[0];
+    if (lowerPath.startsWith('/product/') || lowerPath.startsWith('/marketplace/item/')) {
+      const productId = (lowerPath.startsWith('/product/') 
+        ? cleanPath.substring('/product/'.length) 
+        : cleanPath.substring('/marketplace/item/'.length)).split('?')[0];
       return { tab: 'discover' as Tab, notifs: false, productId: productId || null };
     }
-    if (cleanPath === '/admin-panel' || cleanPath === '/admin') {
-      return { tab: 'admin' as Tab, notifs: false };
-    }
-    if (cleanPath === '/notifications') {
-      return { tab: 'feed' as Tab, notifs: true };
-    }
-    if (cleanPath === '/explore' || cleanPath === '/discover') {
+    if (lowerPath === '/marketplace' || lowerPath === '/shop') {
       return { tab: 'discover' as Tab, notifs: false };
     }
-    if (cleanPath === '/reels' || cleanPath === '/videos' || cleanPath === '/shorts') {
-      return { tab: 'videos' as Tab, notifs: false };
+
+    // 5. Messages / Chats
+    if (lowerPath.startsWith('/messages/') || lowerPath.startsWith('/chat/') || lowerPath.startsWith('/m/')) {
+      let chatId = '';
+      if (lowerPath.startsWith('/messages/')) chatId = cleanPath.substring('/messages/'.length);
+      else if (lowerPath.startsWith('/chat/')) chatId = cleanPath.substring('/chat/'.length);
+      else if (lowerPath.startsWith('/m/')) chatId = cleanPath.substring('/m/'.length);
+      chatId = chatId.split('?')[0];
+      return { tab: 'messenger' as Tab, notifs: false, chatUid: chatId || null };
     }
-    if (cleanPath.startsWith('/messages/')) {
-      const chatUid = cleanPath.split('/messages/')[1]?.split('?')[0];
-      return { tab: 'messenger' as Tab, notifs: false, chatUid };
-    }
-    if (cleanPath === '/messages' || cleanPath === '/messenger') {
+    if (lowerPath === '/messages' || lowerPath === '/messenger' || lowerPath === '/chat' || lowerPath === '/inbox') {
       return { tab: 'messenger' as Tab, notifs: false };
     }
-    if (cleanPath === '/settings') {
+
+    // 6. Settings & Sub-sections
+    if (lowerPath.startsWith('/settings/')) {
+      const section = cleanPath.substring('/settings/'.length).split('?')[0].toLowerCase();
+      return { tab: 'settings' as Tab, notifs: false, settingsSection: section || null };
+    }
+    if (lowerPath === '/settings') {
       return { tab: 'settings' as Tab, notifs: false };
     }
-    if (cleanPath === '/profile' || cleanPath.startsWith('/@') || cleanPath.startsWith('/u/')) {
-      let username = null;
-      let userId = null;
-      if (cleanPath.startsWith('/@')) username = cleanPath.split('/@')[1]?.split('?')[0];
-      if (cleanPath.startsWith('/u/')) userId = cleanPath.split('/u/')[1]?.split('?')[0];
+
+    // 7. Profiles
+    if (lowerPath.startsWith('/@') || lowerPath.startsWith('/u/') || lowerPath.startsWith('/profile/')) {
+      let username: string | null = null;
+      let userId: string | null = null;
+      if (lowerPath.startsWith('/@')) {
+        username = cleanPath.substring('/@'.length).split('?')[0];
+      } else if (lowerPath.startsWith('/u/')) {
+        userId = cleanPath.substring('/u/'.length).split('?')[0];
+      } else if (lowerPath.startsWith('/profile/')) {
+        const seg = cleanPath.substring('/profile/'.length).split('?')[0];
+        if (seg.startsWith('@')) username = seg.substring(1);
+        else userId = seg;
+      }
       return { tab: 'profile' as Tab, notifs: false, username, userId };
     }
-    if (cleanPath === '/dashboard' || cleanPath === '/stats') {
+    if (lowerPath === '/profile' || lowerPath === '/me') {
+      return { tab: 'profile' as Tab, notifs: false };
+    }
+
+    // 8. Notifications
+    if (lowerPath === '/notifications' || lowerPath === '/alerts') {
+      return { tab: 'feed' as Tab, notifs: true };
+    }
+
+    // 9. Discover / Explore
+    if (lowerPath === '/explore' || lowerPath === '/discover' || lowerPath === '/search') {
+      return { tab: 'discover' as Tab, notifs: false };
+    }
+
+    // 10. Videos / Reels main feed
+    if (lowerPath === '/reels' || lowerPath === '/videos' || lowerPath === '/shorts') {
+      return { tab: 'videos' as Tab, notifs: false };
+    }
+
+    // 11. Admin & Dashboard
+    if (lowerPath === '/admin-panel' || lowerPath === '/admin') {
+      return { tab: 'admin' as Tab, notifs: false };
+    }
+    if (lowerPath === '/dashboard' || lowerPath === '/stats' || lowerPath === '/analytics') {
       return { tab: 'dashboard' as Tab, notifs: false };
     }
+
+    // 12. Create Post
+    if (lowerPath === '/create-post' || lowerPath === '/new-post') {
+      return { tab: 'feed' as Tab, notifs: false, isPosting: true };
+    }
+
+    // 13. Offline Sanctuary
+    if (lowerPath === '/offline') {
+      return { tab: 'feed' as Tab, notifs: false, isOfflineView: true };
+    }
+
     return { tab: 'feed' as Tab, notifs: false };
   };
 
@@ -483,11 +740,12 @@ function AppContent() {
       viewingStoreId: (pathInit as any).storeId || null,
       viewingProductId: (pathInit as any).productId || null,
       messageRecipient: (pathInit as any).chatUid ? { id: (pathInit as any).chatUid } : null,
-      isPosting: false,
+      isPosting: !!(pathInit as any).isPosting,
       isNotificationsOpen: pathInit.notifs,
       isAccountSwitcherOpen: false,
+      settingsSection: (pathInit as any).settingsSection || null,
       storyState: {
-        activeStoryGroup: null,
+        activeStoryGroup: (pathInit as any).storyUserId ? { userId: (pathInit as any).storyUserId } : null,
         isStudioOpen: false,
         isCreatingNote: false,
       },
@@ -518,6 +776,28 @@ function AppContent() {
     }
     if (pathInit.notifs) {
       setIsNotificationsOpen(true);
+    }
+    if ((pathInit as any).settingsSection) {
+      setSettingsSection((pathInit as any).settingsSection);
+    }
+    if ((pathInit as any).isPosting) {
+      setIsPosting(true);
+    }
+    if ((pathInit as any).storyUserId) {
+      const sState = {
+        activeStoryGroup: { userId: (pathInit as any).storyUserId },
+        isStudioOpen: false,
+        isCreatingNote: false,
+      };
+      setStoryState(sState);
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('aeirmist-story-state-restore', { detail: sState }));
+      }, 150);
+    }
+    if ((pathInit as any).isOfflineView) {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('open-offline-sanctuary'));
+      }, 100);
     }
 
     if (!window.history.state || !window.history.state._appNav) {
@@ -586,6 +866,7 @@ function AppContent() {
       isNotificationsOpen,
       isAccountSwitcherOpen,
       storyState,
+      settingsSection,
       _appNav: true
     };
 
@@ -597,7 +878,10 @@ function AppContent() {
       viewingVideoId,
       viewingStoreId, 
       viewingProductId,
-      messageRecipient?.id || null
+      messageRecipient?.id || null,
+      storyState.activeStoryGroup?.userId || null,
+      settingsSection,
+      isPosting
     );
 
     const hState = window.history.state;
@@ -617,6 +901,7 @@ function AppContent() {
       hState.isPosting !== isPosting ||
       hState.isNotificationsOpen !== isNotificationsOpen ||
       hState.isAccountSwitcherOpen !== isAccountSwitcherOpen ||
+      hState.settingsSection !== settingsSection ||
       JSON.stringify(hState.storyState) !== JSON.stringify(storyState);
 
     if (isDiff) {
@@ -624,7 +909,20 @@ function AppContent() {
     } else if (window.location.pathname !== targetUrl) {
       window.history.replaceState(stateToPush, '', targetUrl);
     }
-  }, [activeTab, viewingProfile, viewingPostId, messageRecipient, isPosting, isNotificationsOpen, isAccountSwitcherOpen, storyState]);
+  }, [
+    activeTab, 
+    viewingProfile, 
+    viewingPostId, 
+    viewingVideoId, 
+    viewingStoreId, 
+    viewingProductId, 
+    messageRecipient, 
+    isPosting, 
+    isNotificationsOpen, 
+    isAccountSwitcherOpen, 
+    storyState, 
+    settingsSection
+  ]);
 
   // Listen to popstate event (back/forward button)
   useEffect(() => {
@@ -643,20 +941,28 @@ function AppContent() {
         setIsPosting(poppedState.isPosting);
         setIsNotificationsOpen(poppedState.isNotificationsOpen);
         setIsAccountSwitcherOpen(poppedState.isAccountSwitcherOpen);
+        setSettingsSection(poppedState.settingsSection || null);
         if (poppedState.storyState) {
           setStoryState(poppedState.storyState);
           window.dispatchEvent(new CustomEvent('aeirmist-story-state-restore', { detail: poppedState.storyState }));
+        }
+
+        // Sync tab history stack
+        const restoredTab = poppedState.activeTab === 'notifications' ? 'feed' : poppedState.activeTab;
+        if (restoredTab && tabHistoryStackRef.current[tabHistoryStackRef.current.length - 1] !== restoredTab) {
+          tabHistoryStackRef.current.push(restoredTab);
         }
         
         // Reset popping state asynchronously to accommodate React state update scheduling
         setTimeout(() => {
           isPoppingRef.current = false;
-        }, 0);
+        }, 50);
       } else {
         // Fallback popstate if state doesn't have _appNav (e.g. direct url change)
         const pathInit = getInitialStateFromPath(window.location.pathname);
         setActiveTab(pathInit.tab);
         setIsNotificationsOpen(pathInit.notifs);
+        setSettingsSection(null);
       }
     };
 
@@ -726,9 +1032,114 @@ function AppContent() {
 
   // Show unified Welcome screen on opening / initial load
   if (loading || (showSplash && !needsUsername)) {
-    const displayNameText = user 
-      ? (profile?.displayName || user.displayName || user.email?.split('@')[0] || 'User')
-      : 'AEIRMIST';
+    const getPersistedIdName = () => {
+      const isValid = (val?: string | null) => {
+        if (!val || typeof val !== 'string') return false;
+        const trimmed = val.trim();
+        if (!trimmed) return false;
+        const l = trimmed.toLowerCase();
+        return l !== 'aeirmist member' && l !== 'aeirmist user' && l !== 'user' && l !== 'member';
+      };
+
+      // Explicit check for main admin account: junaedislamjim180@gmail.com / doViFWfMXcOoas976z6MO216YNg1
+      const userEmail = (user?.email || '').toLowerCase().trim();
+      const userUid = user?.uid || '';
+      const profileEmail = (profile?.email || '').toLowerCase().trim();
+      const profileUid = profile?.ownerUid || profile?.uid || profile?.id || '';
+      const profileUsername = (profile?.username || '').toLowerCase().trim();
+
+      if (
+        userEmail === 'junaedislamjim180@gmail.com' ||
+        userUid === 'dovifwfmxcooas976z6mo216yng1' ||
+        userUid === 'doViFWfMXcOoas976z6MO216YNg1' ||
+        profileEmail === 'junaedislamjim180@gmail.com' ||
+        profileUid === 'doViFWfMXcOoas976z6MO216YNg1' ||
+        profileUid === 'profile_doViFWfMXcOoas976z6MO216YNg1' ||
+        profileUsername === 'junaed_islam_jim9'
+      ) {
+        return 'Junaed Islam Jim';
+      }
+
+      if (isValid(profile?.displayName)) return profile.displayName.trim();
+      if (isValid(profile?.fullName)) return profile.fullName.trim();
+      if (isValid(profile?.name)) return profile.name.trim();
+
+      if (typeof window !== 'undefined') {
+        try {
+          const rawSession = localStorage.getItem('aeirmist_session');
+          if (rawSession) {
+            const s = JSON.parse(rawSession);
+            if (s?.email?.toLowerCase() === 'junaedislamjim180@gmail.com' || s?.uid === 'doViFWfMXcOoas976z6MO216YNg1' || s?.username === 'junaed_islam_jim9') {
+              return 'Junaed Islam Jim';
+            }
+          }
+        } catch (e) {}
+
+        const cachedId = localStorage.getItem('aeirmist_cached_id_name');
+        if (isValid(cachedId)) return cachedId!.trim();
+
+        const cachedDisplay = localStorage.getItem('aeirmist_cached_display_name');
+        if (isValid(cachedDisplay)) return cachedDisplay!.trim();
+
+        try {
+          const rawProfile = localStorage.getItem('aeirmist_cached_profile');
+          if (rawProfile) {
+            const p = JSON.parse(rawProfile);
+            if (p?.email?.toLowerCase() === 'junaedislamjim180@gmail.com' || p?.uid === 'doViFWfMXcOoas976z6MO216YNg1' || p?.username === 'junaed_islam_jim9') {
+              return 'Junaed Islam Jim';
+            }
+            if (isValid(p?.displayName)) return p.displayName.trim();
+            if (isValid(p?.fullName)) return p.fullName.trim();
+            if (isValid(p?.name)) return p.name.trim();
+          }
+        } catch (e) {}
+
+        try {
+          const rawSession = localStorage.getItem('aeirmist_session');
+          if (rawSession) {
+            const s = JSON.parse(rawSession);
+            if (isValid(s?.displayName)) return s.displayName.trim();
+            if (isValid(s?.fullName)) return s.fullName.trim();
+            if (isValid(s?.name)) return s.name.trim();
+          }
+        } catch (e) {}
+
+        try {
+          const rawUserProfile = localStorage.getItem('aeirmist_user_profile');
+          if (rawUserProfile) {
+            const up = JSON.parse(rawUserProfile);
+            if (isValid(up?.displayName)) return up.displayName.trim();
+            if (isValid(up?.fullName)) return up.fullName.trim();
+            if (isValid(up?.name)) return up.name.trim();
+          }
+        } catch (e) {}
+
+        try {
+          const rawAccounts = localStorage.getItem('aeirmist_saved_accounts');
+          if (rawAccounts) {
+            const accs = JSON.parse(rawAccounts);
+            if (Array.isArray(accs) && accs.length > 0) {
+              const activeId = localStorage.getItem('aeirmist_active_profile_id');
+              const found = accs.find((a: any) => a.id === activeId) || accs[0];
+              if (isValid(found?.displayName)) return found.displayName.trim();
+              if (isValid(found?.fullName)) return found.fullName.trim();
+              if (isValid(found?.name)) return found.name.trim();
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (isValid(user?.displayName) && user?.displayName !== profile?.username) {
+        return user.displayName.trim();
+      }
+
+      return null;
+    };
+
+    const resolvedIdName = getPersistedIdName();
+    const isUserKnown = Boolean(user || profile || resolvedIdName);
+
+    const displayNameText = resolvedIdName || 'AEIRMIST';
 
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center z-[100] overflow-hidden select-none">
@@ -754,7 +1165,7 @@ function AppContent() {
               transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
               className="text-xs sm:text-sm font-black tracking-[0.4em] text-zinc-400 uppercase"
             >
-              {user ? 'WELCOME' : 'WELCOME TO'}
+              {resolvedIdName ? 'WELCOME' : 'WELCOME TO'}
             </motion.span>
 
             <motion.h1
@@ -886,7 +1297,7 @@ function AppContent() {
     );
   }
 
-  if (isScheduledForPurge) {
+  if (isScheduledForPurge || profile?.scheduledForPurge || profile?.status === 'scheduled_for_deletion') {
     return (
       <Suspense fallback={null}>
         <PurgeScreen onCancel={async () => {
@@ -1259,7 +1670,7 @@ function AppContent() {
                     <div className="w-full min-h-full">
                       <ErrorBoundary inline>
                         <Suspense fallback={<LazyFallback />}>
-                          <SettingsSystem />
+                          <SettingsSystem initialSection={settingsSection as any} onSectionChange={(sec) => setSettingsSection(sec)} />
                         </Suspense>
                       </ErrorBoundary>
                     </div>
@@ -1419,9 +1830,15 @@ function AppContent() {
             onClose={() => setPendingPermission(null)}
             status={permissions[pendingPermission]?.status}
             onConfirm={async () => {
-              const success = await _requestPermission(pendingPermission);
+              const permType = pendingPermission;
+              const success = await _requestPermission(permType);
               if (success) {
                 setPendingPermission(null);
+                addToast?.({
+                  title: 'Access Granted',
+                  message: `${String(permType).charAt(0).toUpperCase() + String(permType).slice(1)} permission enabled successfully.`,
+                  type: 'success'
+                });
               }
             }}
           />

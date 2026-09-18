@@ -43,7 +43,6 @@ var init_logger = __esm({
       "card",
       "key",
       "private",
-      "message",
       "billing",
       "stripe",
       "auth",
@@ -926,7 +925,7 @@ async function startServer() {
   app.use((req, res, next) => {
     if (req.path === "/api/payments/webhook" || req.method === "GET") {
       if (!req.session.csrfToken) {
-        req.session.csrfToken = Math.random().toString(36).substring(2);
+        req.session.csrfToken = import_crypto.default.randomBytes(16).toString("hex");
       }
       res.cookie("XSRF-TOKEN", req.session.csrfToken, {
         sameSite: sameSiteCookie,
@@ -1122,7 +1121,7 @@ async function startServer() {
         });
       }
       const result = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.0-flash",
         contents
       });
       res.json({ text: result.text });
@@ -1203,7 +1202,7 @@ Context/Topic: "${context}"` : ""}`;
         config.responseMimeType = "application/json";
       }
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.0-flash",
         contents: promptStr,
         config
       });
@@ -1249,7 +1248,7 @@ Context/Topic: "${context}"` : ""}`;
         httpOptions: { headers: { "User-Agent": "aistudio-build" } }
       });
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.0-flash",
         contents: `Text: "${text}"`,
         config: {
           systemInstruction: `Analyze the provided comment/text for social platform safety.
@@ -1292,7 +1291,7 @@ Return JSON object:
         httpOptions: { headers: { "User-Agent": "aistudio-build" } }
       });
       const response = await ai.models.generateContent({
-        model: "gemini-3.6-flash",
+        model: "gemini-2.0-flash",
         contents: `Search query: "${query}"`,
         config: {
           systemInstruction: `Analyze this search query for obvious spelling typos or wrong character keys. If there is a clear typo or misspelled word, return the corrected query string. If the query is already correctly spelled or looks like a proper name/handle, return null.

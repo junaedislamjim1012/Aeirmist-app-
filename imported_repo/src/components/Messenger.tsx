@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Send, 
@@ -32,7 +32,8 @@ import {
   Trash2,
   Users,
   ShieldCheck,
-  Settings
+  Settings,
+  UserX
 } from 'lucide-react';
 const EmojiPicker = React.lazy(() => import('emoji-picker-react'));
 import { CallModal } from './CallModal';
@@ -41,7 +42,7 @@ import { ChatContextMenu } from './messenger/ChatContextMenu';
 import { AccountSwitcher } from './messenger/AccountSwitcher';
 import { SettingsModal } from './messenger/SettingsModal';
 import ProfileSystem from './profile/ProfileSystem';
-import { getAvatarUrl } from '../lib/avatar';
+import { getAvatarUrl, BLANK_DP } from '../lib/avatar';
 import { Avatar } from './ui/Avatar';
 import { RequestsSection } from './messenger/RequestsSection';
 import { ChatInfoPanel } from './messenger/ChatInfoPanel';
@@ -72,13 +73,69 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Chat, Message } from '../types/messenger';
-import { formatAeirmistTimestamp, formatShortTimestamp, formatActiveStatus, formatDateSeparator } from '../lib/date';
+import { 
+  formatAeirmistTimestamp, 
+  formatShortTimestamp, 
+  formatActiveStatus, 
+  formatDateSeparator, 
+  formatMetaInboxTimestamp,
+  extractTimestampMs
+} from '../lib/date';
 import { useAeirmist } from '../context/AeirmistContext';
 import { aeirmistCache } from '../services/CacheService';
 import { mediaService, MediaQuality } from '../services/MediaService';
 import { messagingService } from '../modules/messaging/MessagingService';
 import { aeirmistCall } from '../modules/calls/CallService';
 import { logger } from '@/src/utils/logger';
+
+export const getChatActivityMs = (chat: any): number => {
+  if (!chat) return 0;
+  
+  // 1. Optimistic bump check if write is pending
+  if (chat._optimisticBumpAt && (chat.isOptimistic || chat.hasPendingWrites)) {
+    return chat._optimisticBumpAt;
+  }
+
+  // 2. Extract from primary timestamp fields
+  const t0 = extractTimestampMs(chat.latestMessageAt);
+  if (t0 > 0) return t0;
+
+  const t1 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.rawLastMessage?.timestamp);
+  if (t1 > 0) return t1;
+
+  const t2 = extractTimestampMs(chat.updatedAt);
+  if (t2 > 0) return t2;
+
+  const t3 = extractTimestampMs(chat.createdAt);
+  if (t3 > 0) return t3;
+
+  if (typeof chat.updatedAtMs === 'number' && chat.updatedAtMs > 0) {
+    return chat.updatedAtMs;
+  }
+
+  if (chat.hasPendingWrites || chat.isOptimistic) {
+    return Date.now();
+  }
+
+  return 0;
+};
+
+export const sortChatsDeterministic = (chatsList: any[], activeProfileId?: string): any[] => {
+  return [...chatsList].sort((a, b) => {
+    const pinA = typeof a.isPinned === 'boolean' ? a.isPinned : !!a.isPinned?.[activeProfileId || ''];
+    const pinB = typeof b.isPinned === 'boolean' ? b.isPinned : !!b.isPinned?.[activeProfileId || ''];
+    if (pinA && !pinB) return -1;
+    if (!pinA && pinB) return 1;
+
+    const timeA = a.latestMessageAtMs || a.updatedAtMs || getChatActivityMs(a);
+    const timeB = b.latestMessageAtMs || b.updatedAtMs || getChatActivityMs(b);
+
+    if (timeB !== timeA) {
+      return (timeB || 0) - (timeA || 0);
+    }
+    return String(b.id || '').localeCompare(String(a.id || ''));
+  });
+};
 
 
 const moods = {
@@ -106,16 +163,28 @@ const LiveParticipantAvatar = ({
   innerRoundedClassName?: string
 }) => {
   const { db } = useAeirmist();
-  const [livePhoto, setLivePhoto] = useState<string>(fallbackPhoto);
+  const [livePhoto, setLivePhoto] = useState<string>(fallbackPhoto || BLANK_DP);
+  const [isDeleted, setIsDeleted] = useState(false);
 
   useEffect(() => {
-    if (!db || !participantId) return;
-    const unsub = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
+    const unsub = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data.photoURL) {
+        if (data.isDeleted === true || data.status === 'deleted') {
+          setLivePhoto(BLANK_DP);
+          setIsDeleted(true);
+        } else if (data.photoURL) {
           setLivePhoto(getAvatarUrl(data.photoURL));
+          setIsDeleted(false);
+        } else {
+          setLivePhoto(fallbackPhoto || BLANK_DP);
+          setIsDeleted(false);
         }
+      } else {
+        // Document does not exist in Firestore (account deleted/purged)
+        setLivePhoto(BLANK_DP);
+        setIsDeleted(true);
       }
     }, (err) => {
       logger.warn("Error syncing participant live avatar:", err);
@@ -125,9 +194,9 @@ const LiveParticipantAvatar = ({
 
   return (
     <Avatar 
-      src={livePhoto} 
-      userId={participantId} 
-      showStoryRing={showStoryRing} 
+      src={isDeleted ? BLANK_DP : livePhoto} 
+      userId={isDeleted ? undefined : participantId} 
+      showStoryRing={!isDeleted && showStoryRing} 
       sizeClassName={sizeClassName}
       roundedClassName={roundedClassName}
       innerRoundedClassName={innerRoundedClassName}
@@ -138,26 +207,35 @@ const LiveParticipantAvatar = ({
 
 export const LiveParticipantName = ({ participantId, fallbackName, className = "", chatId }: { participantId: string, fallbackName: string, className?: string, chatId?: string }) => {
   const { db, profile } = useAeirmist();
-  const [profileName, setProfileName] = useState<string>(fallbackName);
+  const [profileName, setProfileName] = useState<string>(fallbackName || 'Aeirmist User');
   const [nickname, setNickname] = useState<string>('');
+  const [isDeleted, setIsDeleted] = useState(false);
 
   useEffect(() => {
-    if (!db || !participantId) return;
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
     
     // Listen for profile changes
-    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        setProfileName(data.displayName || data.username || fallbackName);
+        if (data.isDeleted === true || data.status === 'deleted') {
+          setProfileName('Aeirmist User');
+          setIsDeleted(true);
+        } else {
+          setProfileName(data.displayName || data.username || fallbackName || 'Aeirmist User');
+          setIsDeleted(false);
+        }
       } else {
-        setProfileName(fallbackName);
+        // Document does not exist (account deleted/purged)
+        setProfileName('Aeirmist User');
+        setIsDeleted(true);
       }
     });
 
     // Listen for shared nickname changes
     let unsubNickname: any;
-    if (db && chatId) {
-        unsubNickname = onSnapshot(doc(db, 'chat_settings', chatId), (docSnap) => {
+    if (db && chatId && typeof chatId === 'string' && chatId.trim()) {
+        unsubNickname = onSnapshot(doc(db, 'chat_settings', chatId.trim()), (docSnap) => {
             if (docSnap.exists()) {
                 const nicks = docSnap.data().nicknames || {};
                 setNickname(nicks[participantId] || '');
@@ -175,7 +253,7 @@ export const LiveParticipantName = ({ participantId, fallbackName, className = "
     };
   }, [db, participantId, fallbackName, chatId]);
 
-  return <span className={className}>{nickname || profileName}</span>;
+  return <span className={className}>{isDeleted ? 'Aeirmist User' : (nickname || profileName)}</span>;
 };
 
 const LiveParticipantPresenceDot = ({ participantId }: { participantId: string }) => {
@@ -183,12 +261,16 @@ const LiveParticipantPresenceDot = ({ participantId }: { participantId: string }
   const [showPresence, setShowPresence] = useState(false);
 
   useEffect(() => {
-    if (!db || !participantId) return;
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
     
-    const unsub = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    const unsub = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        const isOnline = onlineUsers.has(participantId);
+        if (data.isDeleted === true || data.status === 'deleted') {
+          setShowPresence(false);
+          return;
+        }
+        const isOnline = !!onlineUsers?.has?.(participantId);
         const hasShowActivity = data.privacySettings?.showActivity !== false;
         const isOnlineStatusOn = data.messagingSettings?.onlineStatus !== false;
         setShowPresence(isOnline && hasShowActivity && isOnlineStatusOn);
@@ -220,9 +302,9 @@ const LiveParticipantSubDetails = ({ participantId, chatId }: { participantId: s
   const myOnlineStatusOn = profile?.messagingSettings?.onlineStatus !== false;
 
   useEffect(() => {
-    if (!db || !participantId) return;
+    if (!db || !participantId || typeof participantId !== 'string' || !participantId.trim()) return;
 
-    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId), (docSnap) => {
+    const unsubProfile = onSnapshot(doc(db, 'profiles', participantId.trim()), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setUsername(data.username || '');
@@ -232,33 +314,36 @@ const LiveParticipantSubDetails = ({ participantId, chatId }: { participantId: s
       }
     });
 
-    const indicatorId = `${chatId}_${participantId}`;
-    const unsubTyping = onSnapshot(doc(db, 'typing_indicators', indicatorId), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.updatedAt) {
-          try {
-            const date = typeof data.updatedAt.toDate === 'function' ? data.updatedAt.toDate() : new Date(data.updatedAt);
-            const isCurrentlyTyping = (Date.now() - date.getTime()) < 4000;
-            setIsTyping(isCurrentlyTyping);
-          } catch (e) {
+    let unsubTyping: (() => void) | undefined;
+    if (chatId && typeof chatId === 'string' && chatId.trim()) {
+      const indicatorId = `${chatId.trim()}_${participantId.trim()}`;
+      unsubTyping = onSnapshot(doc(db, 'typing_indicators', indicatorId), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.updatedAt) {
+            try {
+              const date = typeof data.updatedAt.toDate === 'function' ? data.updatedAt.toDate() : new Date(data.updatedAt);
+              const isCurrentlyTyping = (Date.now() - date.getTime()) < 4000;
+              setIsTyping(isCurrentlyTyping);
+            } catch (e) {
+              setIsTyping(false);
+            }
+          } else {
             setIsTyping(false);
           }
         } else {
           setIsTyping(false);
         }
-      } else {
-        setIsTyping(false);
-      }
-    });
+      });
+    }
 
     return () => {
       unsubProfile();
-      unsubTyping();
+      if (unsubTyping) unsubTyping();
     };
   }, [db, participantId, chatId]);
 
-  const isOnline = onlineUsers.has(participantId);
+  const isOnline = !!onlineUsers?.has?.(participantId);
 
   let presenceText = '';
   if (showPresence) {
@@ -306,8 +391,8 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
     sendMessage, 
     uploadMedia, 
     mediaSettings,
-    allProfiles,
-    suggestedUsers,
+    allProfiles = [],
+    suggestedUsers = [],
     localAvatarURL,
     toggleNotification,
     deleteConversation,
@@ -486,7 +571,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
     setForwardingMessage(null);
   };
 
-  // Global chats filtering logic - moved to useMemo for better reactivity with follow status
+  // Global chats filtering logic - strictly mutually exclusive to prevent duplicated inboxes
   const mainChats = useMemo(() => {
     return chats.filter(data => {
       // Hide Vaulted conversations from Main Inbox
@@ -496,15 +581,12 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       const otherId = data.otherParticipantId;
       if (otherId && isBlocked(otherId)) return false;
 
-      // Hide requests from main list
-      const isReq = (data.status === 'request' || (otherId && !isFollowing(otherId))) && data.status !== 'active';
-      
-      // If it's a request and I'm not the sender of the last message, hide it from main list
-      if (isReq && data.lastMessageSenderId !== profile?.id) return false;
+      // Strictly mutually exclusive: if status is 'request', it belongs only in Requests
+      if (data.status === 'request') return false;
       
       return true;
     });
-  }, [chats, isFollowing, isBlocked, profile?.id]);
+  }, [chats, isBlocked, profile?.id]);
 
   const requestChats = useMemo(() => {
     return chats.filter(data => {
@@ -515,14 +597,14 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       const otherId = data.otherParticipantId;
       if (otherId && isBlocked(otherId)) return false;
 
-      const isReq = (data.status === 'request' || (otherId && !isFollowing(otherId))) && data.status !== 'active';
-      
-      // Only show inbound requests
-      if (isReq && data.lastMessageSenderId !== profile?.id) return true;
+      // Inbound message requests only
+      if (data.status === 'request') {
+        return data.lastMessageSenderId !== profile?.id;
+      }
       
       return false;
     });
-  }, [chats, isFollowing, isBlocked, profile?.id]);
+  }, [chats, isBlocked, profile?.id]);
 
   // Visual Viewport Height Tracking for Mobile Keyboards
   useEffect(() => {
@@ -564,7 +646,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       const processedChats = fetchedChats.map(data => {
         // If explicitly deleted for this profile, skip unless a new message arrived after deletion
         const deletedAt = data.deletedFor?.[profile.id];
-        const chatUpdatedAt = data.updatedAt?.toMillis?.() || Date.now();
+        const chatUpdatedAt = getChatActivityMs(data);
         if (deletedAt === true) return null; // Legacy support
         if (typeof deletedAt === 'number' && chatUpdatedAt <= deletedAt) return null;
 
@@ -635,6 +717,8 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           displayLastMsg = rawLastText.startsWith('You: ') ? rawLastText : `You: ${rawLastText}`;
         }
 
+        const calculatedActivityMs = getChatActivityMs(data);
+
         return {
           ...data,
           id: data.id,
@@ -642,6 +726,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           otherParticipantUid,
           name: (data.isGroup || data.type === 'group') ? (data.groupName || data.name || 'Group Chat') : (details.displayName || 'Aeirmist User'),
           photo: (data.isGroup || data.type === 'group') ? getAvatarUrl(data.groupPhotoURL || data.photo) : getAvatarUrl(details.photoURL),
+          rawLastMessage: rawLastMsg,
           lastMessage: displayLastMsg,
           time: timeString,
           unread: typeof data.unreadCount === 'number' ? data.unreadCount > 0 : (data.unreadCount?.[profile.id] || 0) > 0,
@@ -651,19 +736,35 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
           isVanishMode: !!data.isVanishMode,
           theme: data.theme || 'neural',
           themeSettings: data.themeSettings,
-          online: onlineUsers.has(otherParticipantId),
+          online: !!onlineUsers?.has?.(otherParticipantId),
           lastMessageSenderId: lastSenderId,
           lastMessageMood: data.lastMessage?.mood,
-          updatedAtMs: data.updatedAt?.toMillis?.() || Date.now()
+          latestMessageAtMs: calculatedActivityMs,
+          updatedAtMs: calculatedActivityMs
         };
       }).filter(c => c !== null) as any[];
 
-      const sortedChats = processedChats.sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        return (b.updatedAtMs || 0) - (a.updatedAtMs || 0);
+      setChats(prevChats => {
+        const prevMap = new Map(prevChats.map(c => [c.id, c]));
+        const merged = processedChats.map(chat => {
+          const prev = prevMap.get(chat.id);
+          let activity = chat.latestMessageAtMs || chat.updatedAtMs || getChatActivityMs(chat);
+          // If prev state had an optimistic bump within the last 20 seconds and server has not yet written a newer timestamp
+          if (prev?._optimisticBumpAt && (chat.hasPendingWrites || activity < prev._optimisticBumpAt)) {
+            if (Date.now() - prev._optimisticBumpAt < 20000) {
+              activity = prev._optimisticBumpAt;
+            }
+          }
+          return {
+            ...chat,
+            updatedAtMs: activity,
+            latestMessageAtMs: activity,
+            _optimisticBumpAt: prev?._optimisticBumpAt
+          };
+        });
+
+        return sortChatsDeterministic(merged, profile.id);
       });
-      setChats(sortedChats);
     });
 
     return () => unsubscribe();
@@ -745,7 +846,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
         lastMessage: 'Tap to chat',
         time: '',
         unread: false,
-        online: onlineUsers.has(targetId),
+        online: !!onlineUsers?.has?.(targetId),
         participants: [user!.uid, targetUid].filter(Boolean).sort(),
         profileIds: profileIds,
         isTemporary: true
@@ -765,6 +866,55 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
     setTempChat(null);
     setIsMobileList(false);
   };
+
+  const handleOptimisticChatBump = useCallback((chatId: string, text: string, currentChatObj?: any) => {
+    const now = Date.now();
+    const isNew = chatId.startsWith('new_');
+    const targetId = isNew ? chatId.replace('new_', '') : null;
+    const canonicalId = (isNew && targetId && profile?.id) 
+      ? [profile.id, targetId].sort().join('_') 
+      : chatId;
+
+    setChats(prevChats => {
+      let found = false;
+      const updated = prevChats.map(c => {
+        if (c.id === chatId || c.id === canonicalId) {
+          found = true;
+          return {
+            ...c,
+            id: canonicalId,
+            lastMessage: text.startsWith('You: ') ? text : `You: ${text}`,
+            latestMessagePreview: text,
+            updatedAtMs: now,
+            latestMessageAtMs: now,
+            _optimisticBumpAt: now,
+            updatedAt: new Date(now),
+            unread: false,
+            isTemporary: false
+          };
+        }
+        return c;
+      });
+
+      if (!found && currentChatObj) {
+        const newEntry = {
+          ...currentChatObj,
+          id: canonicalId,
+          lastMessage: text.startsWith('You: ') ? text : `You: ${text}`,
+          latestMessagePreview: text,
+          updatedAtMs: now,
+          latestMessageAtMs: now,
+          _optimisticBumpAt: now,
+          updatedAt: new Date(now),
+          unread: false,
+          isTemporary: false
+        };
+        updated.unshift(newEntry);
+      }
+
+      return sortChatsDeterministic(updated, profile?.id);
+    });
+  }, [profile?.id]);
 
   const handleGroupCreated = (groupId: string, groupData?: any) => {
     setIsGroupCreationOpen(false);
@@ -798,19 +948,19 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       list = chats.filter(c => c.isArchived).map(c => ({
         ...c,
         time: formatShortTimestamp(c.updatedAt),
-        online: onlineUsers.has(c.otherParticipantId || '')
+        online: !!onlineUsers?.has?.(c.otherParticipantId || '')
       }));
     } else if (activeFilter === 'requests') {
       list = requestChats.map(c => ({
          ...c,
          time: formatShortTimestamp(c.updatedAt),
-         online: onlineUsers.has(c.otherParticipantId || '')
+         online: !!onlineUsers?.has?.(c.otherParticipantId || '')
       }));
     } else {
       list = mainChats.filter(c => !c.isArchived).map(c => ({
          ...c,
          time: formatShortTimestamp(c.updatedAt),
-         online: onlineUsers.has(c.otherParticipantId || '')
+         online: !!onlineUsers?.has?.(c.otherParticipantId || '')
       }));
 
       if (activeFilter === 'unread') list = list.filter(c => c.unread);
@@ -833,7 +983,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
       );
     }
 
-    return list;
+    return sortChatsDeterministic(list, profile?.id);
   }, [chats, mainChats, requestChats, activeFilter, onlineUsers, searchQuery]);
 
   const themeStyles = {
@@ -1035,7 +1185,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                                       if (existingChat) {
                                         handleChatSelect(existingChat);
                                       } else {
-                                        const usr = allProfiles.find(p => p.id === item.id);
+                                        const usr = allProfiles?.find?.(p => p.id === item.id);
                                         if (usr) handleUserClick(usr);
                                       }
                                     }
@@ -1366,7 +1516,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
 
                   if (searchTab === 'all' || searchTab === 'groups' || searchTab === 'messages' || searchTab === 'media') {
                     chatMatches.forEach(c => {
-                      const isOnline = onlineUsers.has(c.otherParticipantId || '');
+                      const isOnline = !!onlineUsers?.has?.(c.otherParticipantId || '');
                       const isGroup = c.isGroup || (c.participants?.length || 0) > 2;
                       
                       if (searchTab === 'groups' && !isGroup) return;
@@ -1409,7 +1559,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
 
                   if (searchTab === 'all' || searchTab === 'people') {
                     searchResults.forEach(item => {
-                      const isOnline = onlineUsers.has(item.id);
+                      const isOnline = !!onlineUsers?.has?.(item.id);
                       displayList.push(
                         <div 
                           key={`person-${item.id}`}
@@ -1497,7 +1647,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
         ) : (
           /* Normal Sidebar View starts here */
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="p-3.5 md:p-4 pb-1.5 space-y-2.5 min-w-0 relative">
+            <div className="pt-[calc(0.875rem+env(safe-area-inset-top,0px))] md:pt-4 px-3.5 md:px-4 pb-1.5 space-y-2.5 min-w-0 relative">
               <div className="flex items-center justify-between gap-3">
                 <div 
                   className="flex flex-col cursor-pointer group min-w-0 flex-1" 
@@ -1728,14 +1878,17 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                 </div>
               )}
               {filteredChats.map((chat) => {
-                const isOnline = onlineUsers.has(chat.otherParticipantId);
+                const isOnline = !!onlineUsers?.has?.(chat.otherParticipantId);
                 const isSelected = currentChat?.id === chat.id;
+                const activityTimestamp = chat.latestMessageAtMs || chat.updatedAtMs || getChatActivityMs(chat);
+                const metaTime = formatMetaInboxTimestamp(activityTimestamp);
+
                 return (
                   <div 
                     key={chat.id} 
                     onClick={() => handleChatSelect(chat)}
                     onContextMenu={(e) => handleContextMenu(e, chat.id)}
-                    className={`h-[72px] px-4 flex items-center gap-4 cursor-pointer hover:bg-aeirmist-cyan/[0.05] transition-all relative group ${isSelected ? 'bg-aeirmist-cyan/[0.08]' : ''}`}
+                    className={`h-[72px] px-4 flex items-center gap-3.5 cursor-pointer hover:bg-aeirmist-cyan/[0.05] transition-all relative group ${isSelected ? 'bg-aeirmist-cyan/[0.08]' : ''}`}
                   >
                     {/* Avatar */}
                     {chat.isGroup || chat.type === 'group' ? (
@@ -1758,37 +1911,49 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                     )}
 
                     {/* Chat Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h3 className={`text-[14px] font-bold truncate ${chat.unread ? 'text-white' : 'text-white/90'}`}>
-                          {chat.isGroup || chat.type === 'group' ? (chat.name || chat.groupName || 'Group Chat') : (chat.otherParticipantId === profile?.id ? 'My Space' : <LiveParticipantName participantId={chat.otherParticipantId} fallbackName={chat.name} chatId={chat.id} />)}
-                        </h3>
+                    <div className="flex-1 min-w-0 pr-1">
+                      {/* Top Row: Name + Pin badge + Meta timestamp */}
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                          <h3 className={`text-[14px] font-bold truncate ${chat.unread ? 'text-white' : 'text-white/90'}`}>
+                            {chat.isGroup || chat.type === 'group' ? (chat.name || chat.groupName || 'Group Chat') : (chat.otherParticipantId === profile?.id ? 'My Space' : <LiveParticipantName participantId={chat.otherParticipantId} fallbackName={chat.name} chatId={chat.id} />)}
+                          </h3>
+                          {chat.isPinned && (
+                            <Pin size={11} className="text-aeirmist-cyan shrink-0 rotate-45" />
+                          )}
+                        </div>
+                        {metaTime && (
+                          <span className={`text-[11px] shrink-0 font-medium ${chat.unread ? 'text-aeirmist-cyan font-bold' : 'text-white/40'}`}>
+                            {metaTime}
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1 min-w-0 mt-0.5">
-                        <p className={`text-[12px] truncate ${chat.unread ? 'text-white font-medium' : 'text-white/50'}`}>
+
+                      {/* Bottom Row: Last message preview + Unread badge */}
+                      <div className="flex items-center justify-between gap-2 min-w-0 mt-0.5">
+                        <p className={`text-[12px] truncate flex-1 min-w-0 ${chat.unread ? 'text-white font-semibold' : 'text-white/50'}`}>
                           {chat.lastMessage}
                         </p>
+                        {chat.unread && (
+                          <div className="w-2.5 h-2.5 rounded-full bg-aeirmist-cyan shadow-[0_0_10px_rgba(0,242,255,0.5)] shrink-0" />
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-2 shrink-0">
+                    {/* Context Menu Action Button */}
+                    <div className="flex items-center shrink-0">
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
                           handleContextMenu(e as any, chat.id);
                         }}
-                        className="p-1.5 text-white/10 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                        className="p-1.5 text-white/10 hover:text-white hover:bg-white/5 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        title="Chat options"
                       >
                         <MoreVertical size={16} />
                       </button>
-
-                      {/* Unread indicator */}
-                      {chat.unread && (
-                        <div className="w-2.5 h-2.5 rounded-full bg-aeirmist-cyan shadow-[0_0_10px_rgba(0,242,255,0.5)]" />
-                      )}
                     </div>
                   </div>
-
                 );
               })}
             </div>
@@ -1845,6 +2010,7 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
                 localAvatarURL={localAvatarURL}
                 pendingNoteReply={pendingNoteReply}
                 onClearPendingNoteReply={() => setPendingNoteReply(null)}
+                onMessageSent={handleOptimisticChatBump}
               />
             <AnimatePresence>
               {isInfoOpen && (
@@ -2039,7 +2205,8 @@ const ChatWindow = ({
   isVaultMode = false,
   localAvatarURL,
   pendingNoteReply,
-  onClearPendingNoteReply
+  onClearPendingNoteReply,
+  onMessageSent
 }: { 
   chat: Chat, 
   onBack: () => void, 
@@ -2057,7 +2224,8 @@ const ChatWindow = ({
   isVaultMode?: boolean,
   localAvatarURL?: string,
   pendingNoteReply?: { chatId: string; text: string; authorName: string } | null,
-  onClearPendingNoteReply?: () => void
+  onClearPendingNoteReply?: () => void,
+  onMessageSent?: (chatId: string, text: string, currentChat?: any) => void
 }) => {
   const [messages, setMessages] = useState<any[]>([]);
   const [optimistic, setOptimistic] = useState<any[]>([]);
@@ -2083,8 +2251,18 @@ const ChatWindow = ({
   const [isHDActive, setIsHDActive] = useState(false);
   const inputCaptureRef = useRef<((file: File) => void) | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior, block: 'end' });
+    } else if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, []);
   const [failedMessages, setFailedMessages] = useState<Set<string>>(new Set());
   const [otherProfile, setOtherProfile] = useState<any>(null);
+  const [otherProfileLoaded, setOtherProfileLoaded] = useState(false);
 
   const { 
     db, 
@@ -2121,22 +2299,40 @@ const ChatWindow = ({
   const isSelfChat = chat.otherParticipantId === profile?.id;
   const isPrivateSpace = isMySpace || isSelfChat;
 
+  const isGroupChat = Boolean(chat.isGroup || (chat as any).type === 'group' || (chat.participants && chat.participants.length > 2));
+  const isOtherUnavailable = useMemo(() => {
+    if (isPrivateSpace || isGroupChat || !chat.otherParticipantId) return false;
+    if (!otherProfileLoaded) return false;
+    if (otherProfile === null) return true;
+    if (otherProfile.isDeleted === true || otherProfile.status === 'deleted') return true;
+    return false;
+  }, [isPrivateSpace, isGroupChat, chat.otherParticipantId, otherProfileLoaded, otherProfile]);
+
   useEffect(() => {
     const otherId = chat.otherParticipantId || chat.profileIds?.find((id: string) => id !== profile?.id);
     if (!db || !otherId) {
       setOtherProfile(null);
+      setOtherProfileLoaded(true);
       return;
     }
     
-    // Subscribe to other user's profile to check if they are private
+    // Subscribe to other user's profile to check if they are private or deleted
     const unsub = onSnapshot(doc(db, 'profiles', otherId), (snap) => {
+      setOtherProfileLoaded(true);
       if (snap.exists()) {
-        setOtherProfile({ id: snap.id, ...snap.data() });
+        const pData = snap.data();
+        if (pData.isDeleted === true || pData.status === 'deleted') {
+          setOtherProfile({ id: snap.id, ...pData, isDeleted: true });
+        } else {
+          setOtherProfile({ id: snap.id, ...pData });
+        }
       } else {
         setOtherProfile(null);
       }
     }, (err) => {
       logger.warn("Could not listen to other profile:", err);
+      setOtherProfileLoaded(true);
+      setOtherProfile(null);
     });
     
     return () => unsub();
@@ -2175,6 +2371,14 @@ const ChatWindow = ({
   };
 
   const handleVisitProfile = () => {
+    if (isOtherUnavailable) {
+      addToast?.({
+        title: 'Unavailable',
+        message: 'This person is unavailable on Aeirmist.',
+        type: 'info'
+      });
+      return;
+    }
     onUserClick?.({
       id: chat.otherParticipantId || chat.profileIds?.find(id => id !== profile?.id),
       displayName: chat.name,
@@ -2183,6 +2387,14 @@ const ChatWindow = ({
   };
 
   const handleCallClick = async (type: 'audio' | 'video') => {
+    if (isOtherUnavailable) {
+      addToast?.({
+        title: 'Call Unavailable',
+        message: 'This person is unavailable on Aeirmist.',
+        type: 'warning'
+      });
+      return;
+    }
     const micGranted = await requestPermission('microphone');
     if (!micGranted) return;
     
@@ -2228,17 +2440,13 @@ const ChatWindow = ({
     const unsubscribe = messagingService.subscribeToMessages(db, chat.id, profile.id, chat, (fetchedMessages) => {
       setMessages(fetchedMessages);
       setLoading(false);
-      
-      // Auto-scroll on new messages
-      setTimeout(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }, 100);
+      requestAnimationFrame(() => scrollToBottom('auto'));
     });
 
     return () => unsubscribe();
-  }, [db, chat.id, user?.uid, profile?.id]);
+  }, [db, chat.id, user?.uid, profile?.id, scrollToBottom]);
 
-  // Derive processed messages with live read/delivered status
+  // Derive processed messages with live read/delivered status and guaranteed stable chronological order
   const displayedMessages = useMemo(() => {
     const otherParticipantId = chat.otherParticipantId || chat.profileIds?.find((id: string) => id !== profile?.id);
     
@@ -2246,14 +2454,13 @@ const ChatWindow = ({
       if (!val) return 0;
       if (typeof val.toMillis === 'function') return val.toMillis();
       if (typeof val.seconds === 'number') return val.seconds * 1000;
-      if (typeof val === 'number') return val;
+      if (typeof val === 'number' && val > 0) return val;
       if (val instanceof Date) return val.getTime();
-      try {
-        const d = new Date(val);
-        return isNaN(d.getTime()) ? 0 : d.getTime();
-      } catch (e) {
-        return 0;
+      if (typeof val === 'string') {
+        const parsed = Date.parse(val);
+        if (!isNaN(parsed) && parsed > 0) return parsed;
       }
+      return 0;
     };
 
     const lastRead = parseTimestampMs(chat.lastRead?.[otherParticipantId || '']);
@@ -2262,22 +2469,30 @@ const ChatWindow = ({
     const merged = [...messages, ...optimistic].filter((msg, index, self) => {
       // Deduplicate optimistic messages if server confirms receipt
       if (msg.isOptimistic) {
-        const confirmed = messages.some(m => m.metadata?.optimisticId === msg.id);
+        const confirmed = messages.some(m => m.metadata?.optimisticId === msg.id || m.id === msg.id);
         if (confirmed) return false;
       }
       return index === self.findIndex((m) => m.id === msg.id);
     });
 
-    const sorted = merged.map(m => {
-       const timestampMs = m.timestampMs || (m.timestamp?.toMillis ? m.timestamp.toMillis() : Date.now());
+    const sorted = merged.map((m, originalIndex) => {
+       const timestampMs = (typeof m.timestampMs === 'number' && m.timestampMs > 0)
+         ? m.timestampMs
+         : (parseTimestampMs(m.createdAt) || parseTimestampMs(m.timestamp) || (m.isOptimistic ? Date.now() : Date.now()));
        return {
          ...m,
          timestampMs,
-         isSeen: m.isSeen || (m.senderId === profile.id && timestampMs <= lastRead),
-         isDelivered: m.isDelivered || (m.senderId === profile.id && timestampMs <= lastDelivered),
+         _originalIndex: originalIndex,
+         isSeen: m.isSeen || (m.senderId === profile?.id && timestampMs <= lastRead),
+         isDelivered: m.isDelivered || (m.senderId === profile?.id && timestampMs <= lastDelivered),
          isFailed: failedMessages.has(m.id)
        };
-    }).sort((a, b) => (a.timestampMs || 0) - (b.timestampMs || 0));
+    }).sort((a, b) => {
+      if (a.timestampMs !== b.timestampMs) {
+        return a.timestampMs - b.timestampMs;
+      }
+      return a._originalIndex - b._originalIndex;
+    });
 
     return sorted.map((m, i) => ({
       ...m,
@@ -2286,18 +2501,25 @@ const ChatWindow = ({
         isNewSender: i === 0 || sorted[i-1].senderId !== m.senderId
       }
     }));
-  }, [messages, optimistic, chat.lastRead, chat.lastDelivered, chat.id, profile.id, failedMessages]);
+  }, [messages, optimistic, chat.lastRead, chat.lastDelivered, chat.id, profile?.id, failedMessages]);
   
+  // Stable auto-scroll on new messages or list growth
+  const prevMsgLengthRef = useRef(displayedMessages.length);
+  useEffect(() => {
+    if (displayedMessages.length !== prevMsgLengthRef.current) {
+      prevMsgLengthRef.current = displayedMessages.length;
+      requestAnimationFrame(() => scrollToBottom('auto'));
+    }
+  }, [displayedMessages.length, scrollToBottom]);
+
   // Refined scroll behavior for keyboard events
   const prevViewportHeight = useRef(viewportHeight);
   useEffect(() => {
     if (prevViewportHeight.current !== viewportHeight) {
-      if (scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      }
+      requestAnimationFrame(() => scrollToBottom('auto'));
       prevViewportHeight.current = viewportHeight;
     }
-  }, [viewportHeight]);
+  }, [viewportHeight, scrollToBottom]);
 
   // Separate Typing Effect to avoid rebuilding message listener
   useEffect(() => {
@@ -2376,6 +2598,7 @@ const ChatWindow = ({
     };
     
     setOptimistic(prev => [...prev, optimisticMsg]);
+    onMessageSent?.(chat.id, `Sent a ${type}`, chat);
     
     try {
       const isNew = chat.id.startsWith('new_');
@@ -2447,6 +2670,9 @@ const ChatWindow = ({
     };
     
     setOptimistic(prev => [...prev, optimisticMsg]);
+    onMessageSent?.(chat.id, text, chat);
+    requestAnimationFrame(() => scrollToBottom('auto'));
+    setTimeout(() => scrollToBottom('auto'), 60);
     
     try {
       const isNew = chat.id.startsWith('new_');
@@ -2614,30 +2840,30 @@ const ChatWindow = ({
         />
 
         {/* Header */}
-        <header className="flex-shrink-0 w-full px-4 py-2 md:px-6 md:py-3 border-b border-white/10 flex items-center justify-between glass-panel z-[40] relative min-h-0 h-[64px]">
+        <header className="flex-shrink-0 w-full px-4 pt-[calc(0.5rem+env(safe-area-inset-top,0px))] md:pt-3 pb-2 md:pb-3 md:px-6 border-b border-white/10 flex items-center justify-between glass-panel z-[40] relative min-h-0 min-h-[calc(4rem+env(safe-area-inset-top,0px))] md:h-[64px]">
         <div className="flex items-center gap-3 md:gap-4 min-w-0 flex-1">
           <button onClick={onBack} className="md:hidden p-1 -ml-1 text-white/60 hover:text-white transition-colors shrink-0">
             <ChevronLeft size={22} />
           </button>
-          <div className={`relative group flex-shrink-0 ${!isPrivateSpace ? 'cursor-pointer' : ''}`} onClick={!isPrivateSpace ? (chat?.isGroup ? toggleInfo : handleVisitProfile) : undefined}>
+          <div className={`relative group flex-shrink-0 ${!isPrivateSpace && !isOtherUnavailable ? 'cursor-pointer' : ''}`} onClick={!isPrivateSpace && !isOtherUnavailable ? (chat?.isGroup ? toggleInfo : handleVisitProfile) : undefined}>
             <Avatar
-              src={isPrivateSpace ? profile?.photoURL : (chat?.isGroup ? chat.photo : (otherProfile?.photoURL || chat.photo))}
-              alt={isPrivateSpace ? "My Space" : (chat?.isGroup ? chat.name : (otherProfile?.displayName || chat.name))}
+              src={isPrivateSpace ? profile?.photoURL : (chat?.isGroup ? chat.photo : (isOtherUnavailable ? BLANK_DP : (otherProfile?.photoURL || chat.photo)))}
+              alt={isPrivateSpace ? "My Space" : (chat?.isGroup ? chat.name : (isOtherUnavailable ? "Aeirmist User" : (otherProfile?.displayName || chat.name)))}
               sizeClassName="w-10 h-10 md:w-12 md:h-12"
               roundedClassName="rounded-[14px] md:rounded-2xl"
               innerRoundedClassName="rounded-[12px] md:rounded-[14px]"
-              showStoryRing={!isPrivateSpace && !chat?.isGroup}
-              userId={!isPrivateSpace && !chat?.isGroup ? chat.otherParticipantId : undefined}
+              showStoryRing={!isPrivateSpace && !chat?.isGroup && !isOtherUnavailable}
+              userId={!isPrivateSpace && !chat?.isGroup && !isOtherUnavailable ? chat.otherParticipantId : undefined}
               className="group-hover:border-aeirmist-cyan transition-colors"
             />
-            {!isPrivateSpace && !chat?.isGroup && onlineUsers.has(chat.otherParticipantId || '') && showTheirPresence && (
+            {!isPrivateSpace && !chat?.isGroup && !isOtherUnavailable && !!onlineUsers?.has?.(chat.otherParticipantId || '') && showTheirPresence && (
               <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-aeirmist-lime rounded-full border-2 border-aeirmist-bg z-10" />
             )}
           </div>
-          <div className={`group min-w-0 flex-1 ${!isPrivateSpace ? 'cursor-pointer' : ''}`} onClick={!isPrivateSpace ? (chat?.isGroup ? toggleInfo : handleVisitProfile) : undefined}>
+          <div className={`group min-w-0 flex-1 ${!isPrivateSpace && !isOtherUnavailable ? 'cursor-pointer' : ''}`} onClick={!isPrivateSpace && !isOtherUnavailable ? (chat?.isGroup ? toggleInfo : handleVisitProfile) : undefined}>
             <div className="flex items-center gap-1.5 min-w-0">
               <h3 className={`font-semibold text-base md:text-lg tracking-tight group-hover:text-aeirmist-cyan transition-colors truncate ${isVaultMode ? 'text-[#e2afff]' : ''}`}>
-                {isMySpace ? 'My Space' : (isSelfChat ? 'Note to self' : (chat?.isGroup ? chat.name : <LiveParticipantName participantId={chat.otherParticipantId || ''} fallbackName={chat.name || ''} chatId={chat.id} />))}
+                {isMySpace ? 'My Space' : (isSelfChat ? 'Note to self' : (chat?.isGroup ? chat.name : (isOtherUnavailable ? 'Aeirmist User' : <LiveParticipantName participantId={chat.otherParticipantId || ''} fallbackName={chat.name || ''} chatId={chat.id} />)))}
               </h3>
               {isPrivateSpace && <Lock size={12} className="text-white/40 shrink-0" />}
               {isVaultMode && (
@@ -2649,27 +2875,36 @@ const ChatWindow = ({
             {isPrivateSpace && (
               <p className="text-[9px] text-white/40 leading-none mt-0.5 truncate">{isMySpace ? '🔒 Private Workspace' : 'Private Workspace'}</p>
             )}
-            {!isPrivateSpace && showTheirPresence && (
+            {isOtherUnavailable && (
+              <p className="text-[10px] text-white/40 leading-none mt-0.5 truncate font-medium">Unavailable on Aeirmist</p>
+            )}
+            {!isPrivateSpace && !isOtherUnavailable && showTheirPresence && (
               remoteTyping ? (
                 <div className="flex items-center gap-1 mt-0.5">
                   <span className={`text-[8px] uppercase tracking-widest font-black italic ${isVaultMode ? 'text-[#c77dff]' : 'text-aeirmist-cyan'}`}>Typing...</span>
                 </div>
-              ) : (
-                <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                  <p className={`text-[8px] uppercase tracking-widest font-bold ${onlineUsers.has(chat.otherParticipantId || '') && otherProfile?.messagingSettings?.onlineStatus !== false && profile?.messagingSettings?.onlineStatus !== false ? 'text-aeirmist-lime' : 'text-white/30'} truncate`}>
-                    {formatActiveStatus(
-                      onlineUsers.has(chat.otherParticipantId || '') && profile?.messagingSettings?.onlineStatus !== false, 
-                      otherProfile?.lastSeen, 
-                      otherProfile?.messagingSettings?.onlineStatus === false || profile?.messagingSettings?.onlineStatus === false
-                    )}
-                  </p>
-                </div>
-              )
+              ) : (() => {
+                const otherId = chat.otherParticipantId || chat.profileIds?.find((id: string) => id !== profile?.id) || otherProfile?.id;
+                const isOtherOnline = (otherProfile?.status === 'online' || !!onlineUsers?.has(otherId || '')) && otherProfile?.messagingSettings?.onlineStatus !== false;
+                const showStatus = otherProfile?.messagingSettings?.onlineStatus !== false && profile?.messagingSettings?.onlineStatus !== false;
+                return (
+                  <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                    <p className={`text-[8px] uppercase tracking-widest font-bold ${isOtherOnline && showStatus ? 'text-aeirmist-lime flex items-center gap-1' : 'text-white/40'} truncate`}>
+                      {isOtherOnline && showStatus && <span className="w-1.5 h-1.5 rounded-full bg-aeirmist-lime animate-pulse inline-block" />}
+                      {formatActiveStatus(
+                        isOtherOnline && showStatus, 
+                        otherProfile?.lastSeen || otherProfile?.updatedAt, 
+                        !showStatus
+                      )}
+                    </p>
+                  </div>
+                );
+              })()
             )}
           </div>
         </div>
         <div className="flex items-center gap-1 md:gap-4 shrink-0">
-          {!isPrivateSpace && (
+          {!isPrivateSpace && !isOtherUnavailable && (
             <>
               <button 
                 onClick={() => handleCallClick('audio')}
@@ -2714,7 +2949,7 @@ const ChatWindow = ({
       {/* Messages */}
       <div 
         ref={scrollRef} 
-        className="flex-1 w-full max-w-full overflow-y-auto pt-6 space-y-1 scroll-smooth overflow-x-hidden min-w-0"
+        className="flex-1 w-full max-w-full overflow-y-auto pt-6 space-y-1 overflow-x-hidden min-w-0 chat-messages-container"
       >
         <AnimatePresence>
           {chat.isVanishMode && (
@@ -2747,6 +2982,18 @@ const ChatWindow = ({
           <p className="text-[10px] text-white/20 uppercase tracking-[0.3em] font-bold">Signal Encrypted via Aeirmist Core</p>
           <p className="text-[8px] text-white/10 mt-2 px-12">Messages are cryptographically signed and stored in your local identity vault.</p>
         </div>
+
+        {isOtherUnavailable && (
+          <div className="mx-auto my-6 max-w-sm px-6 py-5 bg-white/[0.03] border border-white/10 rounded-2xl text-center backdrop-blur-xl shadow-lg animate-fade-in">
+            <div className="w-10 h-10 rounded-full bg-white/5 mx-auto flex items-center justify-center mb-2.5 text-white/40">
+              <UserX size={20} />
+            </div>
+            <h4 className="text-sm font-semibold text-white/90">This person is unavailable on Aeirmist</h4>
+            <p className="text-[11px] text-white/40 mt-1 leading-relaxed">
+              This account has been deleted or is unavailable. You can still review your existing message history.
+            </p>
+          </div>
+        )}
 
       <div className="flex flex-col gap-1.5 px-4 md:px-6 lg:px-8 w-full min-w-0 overflow-x-hidden">
           {displayedMessages.filter(msg => {
@@ -2833,7 +3080,7 @@ const ChatWindow = ({
         )}
         
         {/* Anchor for scroll to bottom */}
-        <div className="h-4 flex-shrink-0" />
+        <div ref={messagesEndRef} className="h-4 w-full flex-shrink-0" />
       </div>
 
       {/* Input Area - Docked at Bottom */}
@@ -2860,6 +3107,7 @@ const ChatWindow = ({
                             status: 'active',
                             acceptedAt: serverTimestamp()
                           });
+                          onChatUpdate?.({ ...chat, status: 'active' });
                           if (otherId) {
                             try {
                               await toggleFollow(otherId);
@@ -2937,6 +3185,16 @@ const ChatWindow = ({
                       Block
                     </button>
                   </div>
+                </div>
+              );
+            }
+
+            if (isOtherUnavailable) {
+              return (
+                <div className="w-full py-4 px-6 bg-white/[0.02] border border-white/10 rounded-2xl md:rounded-[2rem] text-center backdrop-blur-xl select-none">
+                  <span className="text-white/40 text-xs font-medium tracking-wide">
+                    This person is unavailable on Aeirmist.
+                  </span>
                 </div>
               );
             }

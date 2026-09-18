@@ -16,3 +16,5 @@
 local.properties
 .env
 debug.keystore
+.git_nested
+**/.git_nested

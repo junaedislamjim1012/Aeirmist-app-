@@ -15,9 +15,10 @@ import {
 import { useAeirmist } from '../../context/AeirmistContext';
 import { collection, query, orderBy, onSnapshot, limit, where } from 'firebase/firestore';
 import { AeirmistLogo } from '../ui/AeirmistLogo';
-import { getAvatarUrl } from '../../lib/avatar';
+import { getAvatarUrl, BLANK_DP } from '../../lib/avatar';
 import { Skeleton } from '../ui/Skeleton';
 import { logger } from '@/src/utils/logger';
+import { LocalSqlService } from '../../services/LocalSqlService';
 
 
 export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPostClick?: (postId: string) => void, onCreate?: () => void, onNavigate?: (tab: string) => void }> = React.memo(({ onUserClick, onPostClick, onCreate, onNavigate }) => {
@@ -39,6 +40,16 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
   const { db, user, profile, permissions, requestPermission, setCameraConfig, addToast, unreadNotificationsCount } = useAeirmist();
   const { settings } = useAppearance(); 
   const isGlobalBgActive = settings.globalBgType !== 'none' && !!settings.globalBgValue;
+
+  // Hydrate from Local SQLite/IndexedDB vault on mount
+  useEffect(() => {
+    LocalSqlService.getFeedPosts(20).then(cached => {
+      if (cached && cached.length > 0) {
+        setPosts(prev => prev.length === 0 ? cached.map(c => c.raw || c) : prev);
+        setLoading(false);
+      }
+    }).catch(e => logger.warn("Local DB hydration failed", e));
+  }, []);
 
   const showNotificationPrompt = permissions.notifications?.status === 'prompt';
 
@@ -82,6 +93,8 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
       try {
         // Store only the first 20 for fast cold-start hydration
         localStorage.setItem('aeirmist_home_feed_cache', JSON.stringify(processedPosts.slice(0, 20)));
+        // Persist into Local SQLite/IndexedDB vault
+        LocalSqlService.saveFeedPosts(processedPosts.slice(0, 50));
       } catch (e) {
         logger.warn("Feed cache sync failed", e);
       }
@@ -95,8 +108,8 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
   // listener per batch and merging the results.
   const uidsToQueryString = React.useMemo(() => {
     if (!user || !profile) return '[]';
-    const following = profile.social?.following || [];
-    const uids = Array.from(new Set([...following, profile.id])).sort();
+    const following = (profile.social?.following || []).filter(Boolean);
+    const uids = Array.from(new Set([...following, profile.id, user.uid].filter(Boolean))).sort();
     return JSON.stringify(uids);
   }, [user?.uid, profile?.id, JSON.stringify(profile?.social?.following || [])]);
 
@@ -156,7 +169,22 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
       deduped.sort((a, b) => (b.__sortTime || 0) - (a.__sortTime || 0));
 
       const filtered = deduped.slice(0, postLimit).filter(p => {
-        if (p.isArchived) return false;
+        if (!p || p.isArchived) return false;
+        // Strictly exclude posts from deleted or scheduled-for-purge accounts
+        if (
+          p.isDeletedAuthor || 
+          p.scheduledForPurge || 
+          p.isDeleted ||
+          p.hidden ||
+          p.authorName === 'Aeirmist User' || 
+          p.userName === 'Aeirmist User' || 
+          p.author?.name === 'Aeirmist User' ||
+          p.author?.displayName === 'Aeirmist User' ||
+          p.author?.username === 'aeirmist_user' ||
+          p.author?.username === 'deleted_user'
+        ) {
+          return false;
+        }
         if (p.authorId === profile.id || p.authorUid === user.uid) return true;
         if (p.audience === 'only_me') return false;
         if (p.audience === 'close_friends') {
@@ -174,6 +202,12 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
 
     const handleError = (err: any) => {
       logger.error("Feed listener error:", err);
+      // Attempt to load from local SQLite vault when connection drops or fails
+      LocalSqlService.getFeedPosts(30).then(cached => {
+        if (cached && cached.length > 0) {
+          setPosts(prev => prev.length === 0 ? cached.map(c => c.raw || c) : prev);
+        }
+      }).catch(() => {});
       setLoading(false);
       setIsRefreshing(false);
 
@@ -210,11 +244,29 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
       const processSnapshot = (snapshot: any, key: string) => {
         const dbPosts = snapshot.docs.map((doc: any) => {
           const data = doc.data() as any;
+          const isDeleted = Boolean(
+            data.isDeletedAuthor === true || 
+            data.scheduledForPurge === true ||
+            data.isDeleted === true || 
+            data.hidden === true ||
+            data.author?.isDeleted === true ||
+            data.author?.scheduledForPurge === true ||
+            data.authorName === 'Aeirmist User' || 
+            data.userName === 'Aeirmist User' ||
+            data.author?.name === 'Aeirmist User' ||
+            data.author?.displayName === 'Aeirmist User' ||
+            data.author?.username === 'aeirmist_user' ||
+            data.author?.username === 'deleted_user'
+          );
+
+          // Completely skip deleted or purged author posts - do not show in feed
+          if (isDeleted) return null;
+
           return {
             id: doc.id,
             ...data,
             author: {
-              name: data.author?.displayName || data.author?.username || 'Anonymous User',
+              name: data.author?.displayName || data.author?.username || data.authorName || data.userName || 'User',
               avatar: getAvatarUrl(data.author?.photoURL || data.userAvatar || data.authorAvatar),
               isVerified: data.author?.isVerified || false
             },
@@ -223,7 +275,7 @@ export const HomeFeedSystem: React.FC<{ onUserClick?: (user: any) => void, onPos
             timestamp: data.createdAt?.toDate?.()?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) || 'Just now',
             __sortTime: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || 0,
           };
-        });
+        }).filter(Boolean);
         resultsByBatch.set(key, dbPosts);
         scheduleCommit();
       };
