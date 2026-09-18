@@ -25,6 +25,7 @@ import { aeirmistCache } from '../../services/CacheService';
 import { handleFirestoreError, OperationType } from '../../lib/firebase';
 import { logger } from '@/src/utils/logger';
 import { getAvatarUrl } from '../../lib/avatar';
+import { extractTimestampMs } from '../../lib/date';
 
 function cleanUndefined(obj: any): any {
   if (obj === null || typeof obj !== 'object') {
@@ -665,31 +666,13 @@ class MessagingService {
 
       const getMs = (chat: any) => {
         if (!chat) return 0;
-        const val = chat.updatedAt || chat.lastMessage?.timestamp || chat.lastMessage?.createdAt || chat.createdAt;
-        if (!val) {
-          if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
-          return 0;
-        }
-        if (typeof val.toMillis === 'function') {
-          try {
-            const ms = val.toMillis();
-            if (typeof ms === 'number' && !isNaN(ms) && ms > 0) return ms;
-          } catch (e) {}
-        }
-        if (typeof val.toDate === 'function') {
-          try {
-            const d = val.toDate();
-            if (d instanceof Date && !isNaN(d.getTime())) return d.getTime();
-          } catch (e) {}
-        }
-        if (val instanceof Date && !isNaN(val.getTime())) return val.getTime();
-        if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
-        if (val.seconds && typeof val.seconds === 'number') return val.seconds * 1000;
-        if (typeof val === 'string') {
-          const parsed = Date.parse(val);
-          if (!isNaN(parsed) && parsed > 0) return parsed;
-        }
-        if (chat.hasPendingWrites || chat.lastMessage) return Date.now();
+        const t1 = extractTimestampMs(chat.updatedAt);
+        if (t1 > 0) return t1;
+        const t2 = extractTimestampMs(chat.lastMessage?.timestamp || chat.lastMessage?.createdAt);
+        if (t2 > 0) return t2;
+        const t3 = extractTimestampMs(chat.createdAt);
+        if (t3 > 0) return t3;
+        if (chat.hasPendingWrites || chat.isOptimistic) return Date.now();
         return 0;
       };
 

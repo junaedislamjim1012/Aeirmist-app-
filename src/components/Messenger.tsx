@@ -719,12 +719,25 @@ const Messenger = ({ initialRecipient, onUserClick }: { initialRecipient?: any, 
         };
       }).filter(c => c !== null) as any[];
 
-      const sortedChats = processedChats.sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        return (b.updatedAtMs || 0) - (a.updatedAtMs || 0);
+      setChats(prevChats => {
+        const prevMap = new Map(prevChats.map(c => [c.id, c]));
+        const merged = processedChats.map(chat => {
+          const prev = prevMap.get(chat.id);
+          const highestActivity = Math.max(prev?.updatedAtMs || 0, chat.updatedAtMs || 0);
+          return {
+            ...chat,
+            updatedAtMs: highestActivity
+          };
+        });
+
+        return merged.sort((a, b) => {
+          if (a.isPinned && !b.isPinned) return -1;
+          if (!a.isPinned && b.isPinned) return 1;
+          const timeA = a.updatedAtMs || getChatActivityMs(a);
+          const timeB = b.updatedAtMs || getChatActivityMs(b);
+          return (timeB || 0) - (timeA || 0);
+        });
       });
-      setChats(sortedChats);
     });
 
     return () => unsubscribe();
