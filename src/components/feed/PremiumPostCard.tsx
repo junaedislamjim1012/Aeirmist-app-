@@ -1674,21 +1674,21 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
       </div>
 
       {/* Engagement Buttons Row */}
-      <div className="p-4 sm:p-5">
+      <div className="px-3.5 py-2.5 sm:px-5 sm:py-3.5 border-t border-white/5 bg-white/[0.01]">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button 
               type="button"
               aria-label={isLiked ? "Unlike post" : "Like post"}
               aria-pressed={isLiked}
               onClick={handleLike}
-              className={`flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border transition-all duration-300 active:scale-95 group font-black uppercase text-[10px] sm:text-xs tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aeirmist-magenta ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border transition-all duration-300 active:scale-95 group font-black uppercase text-[10px] sm:text-xs tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aeirmist-magenta ${
                 isLiked 
                   ? 'bg-aeirmist-magenta/10 border-aeirmist-magenta/30 text-aeirmist-magenta shadow-[0_0_15px_rgba(255,0,234,0.15)]' 
                   : 'bg-white/5 border-white/5 text-white/40 hover:text-white hover:border-white/20 hover:bg-white/10'
               }`}
             >
-              <Heart size={16} fill={isLiked ? "currentColor" : "none"} className={`transition-transform group-hover:scale-110 ${isLiked ? 'text-aeirmist-magenta' : 'text-current'}`} aria-hidden="true" />
+              <Heart size={15} fill={isLiked ? "currentColor" : "none"} className={`transition-transform group-hover:scale-110 ${isLiked ? 'text-aeirmist-magenta' : 'text-current'}`} aria-hidden="true" />
               <span>{post.likesCount?.toLocaleString() || '0'}</span>
             </button>
 
@@ -1697,13 +1697,13 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
               aria-label="Toggle comments"
               aria-expanded={showComments}
               onClick={() => setShowComments(!showComments)}
-              className={`flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border transition-all duration-300 active:scale-95 group font-black uppercase text-[10px] sm:text-xs tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aeirmist-cyan ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border transition-all duration-300 active:scale-95 group font-black uppercase text-[10px] sm:text-xs tracking-wider focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aeirmist-cyan ${
                 showComments 
                   ? 'bg-aeirmist-cyan/10 border-aeirmist-cyan/30 text-aeirmist-cyan shadow-[0_0_15px_rgba(0,242,255,0.15)]' 
                   : 'bg-white/5 border-white/5 text-white/40 hover:text-white hover:border-white/20 hover:bg-white/10'
               }`}
             >
-              <MessageSquare size={16} className={`transition-transform group-hover:scale-110 ${showComments ? 'text-aeirmist-cyan' : 'text-current'}`} aria-hidden="true" />
+              <MessageSquare size={15} className={`transition-transform group-hover:scale-110 ${showComments ? 'text-aeirmist-cyan' : 'text-current'}`} aria-hidden="true" />
               <span>{post.commentsCount?.toLocaleString() || '0'}</span>
             </button>
 
@@ -1711,16 +1711,14 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
               type="button"
               aria-label="Share post"
               onClick={handleShare}
-              className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-white/5 bg-white/5 text-white/40 hover:text-white hover:border-white/25 transition-all duration-300 active:scale-95 font-black uppercase text-[10px] sm:text-xs tracking-wider group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              className="flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl border border-white/5 bg-white/5 text-white/40 hover:text-white hover:border-white/25 transition-all duration-300 active:scale-95 font-black uppercase text-[10px] sm:text-xs tracking-wider group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
-              <Share2 size={16} className="transition-transform group-hover:scale-110 group-hover:rotate-12" aria-hidden="true" />
+              <Share2 size={15} className="transition-transform group-hover:scale-110 group-hover:rotate-12" aria-hidden="true" />
               <span>Share</span>
             </button>
 
-
-
-            <div className="flex items-center gap-1.5 px-3 py-1.5 text-white/30 hover:text-white transition-colors">
-              <Eye size={16} className="text-white/20" />
+            <div className="flex items-center gap-1 px-2.5 py-1 text-white/30 hover:text-white transition-colors">
+              <Eye size={15} className="text-white/20" />
               <span className="text-[10px] font-bold font-mono">{(post.viewsCount || 0).toLocaleString()}</span>
             </div>
           </div>
@@ -1730,14 +1728,14 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
             aria-label={isBookmarked ? "Remove from bookmarks" : "Save post to bookmarks"}
             aria-pressed={isBookmarked}
             onClick={handleBookmarkToggle}
-            className={`w-9 h-9 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-95 border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aeirmist-cyan ${
+            className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-95 border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aeirmist-cyan ${
               isBookmarked 
                 ? 'bg-aeirmist-cyan/10 border-aeirmist-cyan/30 text-aeirmist-cyan shadow-[0_0_15px_rgba(0,242,255,0.15)]' 
                 : 'bg-white/5 border-white/5 text-white/30 hover:text-white hover:border-white/25 hover:bg-white/10'
             }`}
             title="Save post"
           >
-            <Bookmark size={15} fill={isBookmarked ? "currentColor" : "none"} className="sm:w-4 sm:h-4" aria-hidden="true" />
+            <Bookmark size={14} fill={isBookmarked ? "currentColor" : "none"} className="sm:w-3.5 sm:h-3.5" aria-hidden="true" />
           </button>
         </div>
 
