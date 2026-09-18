@@ -1032,25 +1032,82 @@ function AppContent() {
 
   // Show unified Welcome screen on opening / initial load
   if (loading || (showSplash && !needsUsername)) {
-    const cachedIdName = typeof window !== 'undefined' ? (localStorage.getItem('aeirmist_cached_id_name') || localStorage.getItem('aeirmist_cached_display_name')) : null;
-    const cachedProfile = typeof window !== 'undefined' ? (() => {
-      try {
-        const raw = localStorage.getItem('aeirmist_cached_profile');
-        return raw ? JSON.parse(raw) : null;
-      } catch (e) { return null; }
-    })() : null;
+    const getPersistedIdName = () => {
+      const isValid = (val?: string | null) => {
+        if (!val || typeof val !== 'string') return false;
+        const trimmed = val.trim();
+        if (!trimmed) return false;
+        const l = trimmed.toLowerCase();
+        return l !== 'aeirmist member' && l !== 'aeirmist user' && l !== 'user' && l !== 'member';
+      };
 
-    const resolvedIdName = (profile?.displayName?.trim() 
-      || profile?.fullName?.trim() 
-      || profile?.name?.trim() 
-      || cachedProfile?.displayName?.trim()
-      || cachedProfile?.fullName?.trim()
-      || cachedProfile?.name?.trim()
-      || cachedIdName?.trim()
-      || (user?.displayName && user.displayName !== profile?.username ? user.displayName.trim() : '')
-      || '');
+      if (isValid(profile?.displayName)) return profile.displayName.trim();
+      if (isValid(profile?.fullName)) return profile.fullName.trim();
+      if (isValid(profile?.name)) return profile.name.trim();
 
-    const displayNameText = resolvedIdName || (user ? 'Aeirmist Member' : 'AEIRMIST');
+      if (typeof window !== 'undefined') {
+        const cachedId = localStorage.getItem('aeirmist_cached_id_name');
+        if (isValid(cachedId)) return cachedId!.trim();
+
+        const cachedDisplay = localStorage.getItem('aeirmist_cached_display_name');
+        if (isValid(cachedDisplay)) return cachedDisplay!.trim();
+
+        try {
+          const rawProfile = localStorage.getItem('aeirmist_cached_profile');
+          if (rawProfile) {
+            const p = JSON.parse(rawProfile);
+            if (isValid(p?.displayName)) return p.displayName.trim();
+            if (isValid(p?.fullName)) return p.fullName.trim();
+            if (isValid(p?.name)) return p.name.trim();
+          }
+        } catch (e) {}
+
+        try {
+          const rawSession = localStorage.getItem('aeirmist_session');
+          if (rawSession) {
+            const s = JSON.parse(rawSession);
+            if (isValid(s?.displayName)) return s.displayName.trim();
+            if (isValid(s?.fullName)) return s.fullName.trim();
+            if (isValid(s?.name)) return s.name.trim();
+          }
+        } catch (e) {}
+
+        try {
+          const rawUserProfile = localStorage.getItem('aeirmist_user_profile');
+          if (rawUserProfile) {
+            const up = JSON.parse(rawUserProfile);
+            if (isValid(up?.displayName)) return up.displayName.trim();
+            if (isValid(up?.fullName)) return up.fullName.trim();
+            if (isValid(up?.name)) return up.name.trim();
+          }
+        } catch (e) {}
+
+        try {
+          const rawAccounts = localStorage.getItem('aeirmist_saved_accounts');
+          if (rawAccounts) {
+            const accs = JSON.parse(rawAccounts);
+            if (Array.isArray(accs) && accs.length > 0) {
+              const activeId = localStorage.getItem('aeirmist_active_profile_id');
+              const found = accs.find((a: any) => a.id === activeId) || accs[0];
+              if (isValid(found?.displayName)) return found.displayName.trim();
+              if (isValid(found?.fullName)) return found.fullName.trim();
+              if (isValid(found?.name)) return found.name.trim();
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (isValid(user?.displayName) && user?.displayName !== profile?.username) {
+        return user.displayName.trim();
+      }
+
+      return null;
+    };
+
+    const resolvedIdName = getPersistedIdName();
+    const isUserKnown = Boolean(user || profile || resolvedIdName);
+
+    const displayNameText = resolvedIdName || 'AEIRMIST';
 
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center z-[100] overflow-hidden select-none">
@@ -1076,7 +1133,7 @@ function AppContent() {
               transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }}
               className="text-xs sm:text-sm font-black tracking-[0.4em] text-zinc-400 uppercase"
             >
-              {user ? 'WELCOME' : 'WELCOME TO'}
+              {resolvedIdName ? 'WELCOME' : 'WELCOME TO'}
             </motion.span>
 
             <motion.h1

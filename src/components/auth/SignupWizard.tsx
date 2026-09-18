@@ -769,7 +769,7 @@ export const SignupWizard: React.FC<SignupWizardProps> = ({
 
   // Display Id Name (Display Name / Full Name) on Welcome Screen
   const welcomeDisplayName = useMemo(() => {
-    return profile?.displayName?.trim() || profile?.fullName?.trim() || fullName?.trim() || profile?.name?.trim() || 'Aeirmist Member';
+    return fullName?.trim() || profile?.displayName?.trim() || profile?.fullName?.trim() || profile?.name?.trim() || 'AEIRMIST';
   }, [profile, fullName]);
 
   return (

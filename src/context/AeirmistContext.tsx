@@ -373,8 +373,11 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [profile, setProfile] = useState<any | null>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const cached = localStorage.getItem('aeirmist_cached_profile');
-        if (cached) return JSON.parse(cached);
+        const cached = localStorage.getItem('aeirmist_cached_profile') || localStorage.getItem('aeirmist_user_profile');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === 'object') return parsed;
+        }
       } catch (e) {}
     }
     return null;
@@ -385,8 +388,9 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (typeof window !== 'undefined' && profile) {
       try {
         localStorage.setItem('aeirmist_cached_profile', JSON.stringify(profile));
-        const idName = profile.displayName || profile.fullName || profile.name;
-        if (idName) {
+        const idName = (profile.displayName || profile.fullName || profile.name || '').trim();
+        const lower = idName.toLowerCase();
+        if (idName && lower !== 'aeirmist member' && lower !== 'aeirmist user' && lower !== 'user') {
           localStorage.setItem('aeirmist_cached_id_name', idName);
         }
       } catch (e) {}
