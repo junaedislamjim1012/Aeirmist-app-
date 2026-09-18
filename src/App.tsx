@@ -1691,9 +1691,9 @@ function AppContent() {
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.1, ease: "easeOut" }}
-                    className="flex-1 h-full overflow-y-auto scroll-container"
+                    className="flex-1 h-full overflow-hidden flex flex-col"
                   >
-                    <div className="w-full min-h-full">
+                    <div className="w-full h-full flex-1 overflow-hidden flex flex-col">
                       <ErrorBoundary inline>
                         <Suspense fallback={<LazyFallback />}>
                           <AdminPanel />

@@ -644,13 +644,10 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
   };
 
   const handleExecuteDelete = async () => {
-    if (!deleteModalUser || deleteConfirmText !== 'DELETE') return;
-    const targetUid = getCanonicalUid(deleteModalUser);
+    if (!deleteModalUser || deleteConfirmText.trim().toUpperCase() !== 'DELETE') return;
+    const targetUid = getCanonicalUid(deleteModalUser) || deleteModalUser.uid || (deleteModalUser.id && !deleteModalUser.id.startsWith('profile_') ? deleteModalUser.id : null);
     const profileId = deleteModalUser.profileId || getProfileId(deleteModalUser) || deleteModalUser.id;
-    if (!targetUid) {
-      addToast({ title: 'Action Aborted', message: "Unable to resolve canonical user ID for deletion.", type: 'warning' });
-      return;
-    }
+    
     try {
       if (deleteType === 'anonymize') {
         if (profileId) {
@@ -676,11 +673,32 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
         }
         addToast({ title: 'User Anonymized', message: 'Personal data removed; posts remain.', type: 'success' });
       } else if (deleteType === 'soft') {
-        await updateUserStatus(targetUid, 'DELETED');
+        if (profileId) {
+          await updateDoc(doc(db, 'profiles', profileId), {
+            status: 'DELETED',
+            isBanned: true
+          }).catch(() => {});
+        }
+        if (targetUid) {
+          await updateUserStatus(targetUid, 'DELETED', profileId);
+        }
         addToast({ title: 'Soft Deleted', message: 'Account marked as deleted (recoverable).', type: 'success' });
       } else {
-        // Full Hard Delete: completely wipe all user data, posts, comments, stories, and username
-        await purgeUser(targetUid);
+        // Full Hard Delete
+        if (profileId) {
+          await deleteDoc(doc(db, 'profiles', profileId)).catch(() => {});
+        }
+        if (targetUid && targetUid !== profileId) {
+          await deleteDoc(doc(db, 'profiles', targetUid)).catch(() => {});
+          await deleteDoc(doc(db, 'profiles', `profile_${targetUid}`)).catch(() => {});
+        }
+        if (targetUid) {
+          await deleteDoc(doc(db, 'users', targetUid)).catch(() => {});
+          await purgeUser(targetUid);
+        }
+        if (deleteModalUser.username) {
+          await deleteDoc(doc(db, 'usernames', deleteModalUser.username.toLowerCase())).catch(() => {});
+        }
         addToast({ title: 'Hard Deleted', message: 'All user data, posts, comments, stories, and username permanently wiped.', type: 'success' });
       }
       setDeleteModalUser(null);
@@ -756,18 +774,20 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
 
       <div className="space-y-3">
         {filteredUsers.map((u) => {
+          const userKey = u.id || u.profileId || u.uid || '';
           const currentStatus = u.status || (u.isBanned ? 'BANNED' : 'ACTIVE');
           const currentRole = u.role || (u.isAdmin ? 'Administrator' : 'USER');
-          const isSelected = selectedUserIds.includes(u.id);
+          const isSelected = Boolean(userKey && selectedUserIds.includes(userKey));
           return (
-            <div key={u.id} className={`glass-panel p-5 rounded-3xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${isSelected ? 'border-aeirmist-cyan/40 bg-aeirmist-cyan/[0.02]' : currentStatus !== 'ACTIVE' ? 'border-red-500/20 bg-red-500/[0.01]' : 'border-white/5 bg-white/[0.01]'}`}>
+            <div key={userKey} className={`glass-panel p-5 rounded-3xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${isSelected ? 'border-aeirmist-cyan/40 bg-aeirmist-cyan/[0.02]' : currentStatus !== 'ACTIVE' ? 'border-red-500/20 bg-red-500/[0.01]' : 'border-white/5 bg-white/[0.01]'}`}>
               <div className="flex items-center gap-4">
                 <input 
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => {
-                    if (isSelected) setSelectedUserIds(selectedUserIds.filter(id => id !== u.id));
-                    else setSelectedUserIds([...selectedUserIds, u.id]);
+                    if (!userKey) return;
+                    if (isSelected) setSelectedUserIds(selectedUserIds.filter(id => id !== userKey));
+                    else setSelectedUserIds([...selectedUserIds, userKey]);
                   }}
                   className="w-4 h-4 rounded accent-aeirmist-cyan cursor-pointer"
                 />
@@ -882,8 +902,12 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
                 </button>
 
                 <button
-                  onClick={() => setDeleteModalUser(u)}
-                  className="h-9 w-9 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500/20 transition-all"
+                  onClick={() => {
+                    setDeleteModalUser(u);
+                    setDeleteConfirmText('');
+                    setDeleteType('soft');
+                  }}
+                  className="h-9 w-9 rounded-xl bg-red-500/10 text-red-500 flex items-center justify-center hover:bg-red-500/20 transition-all cursor-pointer"
                   title="Advanced Delete System"
                 >
                   <Trash2 size={16} />
@@ -1169,8 +1193,8 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
                 </button>
                 <button 
                   onClick={handleExecuteDelete}
-                  disabled={deleteConfirmText !== 'DELETE'}
-                  className="flex-1 h-12 rounded-xl bg-red-500 text-white text-xs font-black uppercase tracking-widest hover:bg-red-400 disabled:opacity-30 transition-all"
+                  disabled={deleteConfirmText.trim().toUpperCase() !== 'DELETE'}
+                  className="flex-1 h-12 rounded-xl bg-red-500 text-white text-xs font-black uppercase tracking-widest hover:bg-red-400 disabled:opacity-30 transition-all cursor-pointer"
                 >
                   Execute
                 </button>
@@ -2205,7 +2229,7 @@ export const AdminPanel = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#06080c] text-white selection:bg-aeirmist-cyan selection:text-black font-sans flex flex-col overflow-y-auto scroll-container">
+    <div className="w-full h-full flex-1 bg-[#06080c] text-white selection:bg-aeirmist-cyan selection:text-black font-sans flex flex-col overflow-y-auto overflow-x-hidden scroll-container">
       
       {/* Sticky Header with Breadcrumbs - Locked to Top */}
       <div className="sticky top-0 z-50 bg-[#06080c]/95 backdrop-blur-xl px-4 md:px-8 py-3.5 border-b border-white/10 flex flex-col gap-3 shrink-0 shadow-2xl">
