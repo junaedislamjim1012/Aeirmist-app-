@@ -1549,6 +1549,7 @@ function AppContent() {
                 <Route path="/payment-success" element={<Suspense fallback={null}><PaymentResult status="success" /></Suspense>} />
                 <Route path="/payment-failure" element={<Suspense fallback={null}><PaymentResult status="failure" /></Suspense>} />
                 <Route path="/admin-panel" element={<AdminPanel />} />
+                <Route path="/admin" element={<AdminPanel />} />
                 <Route path="/community-guidelines" element={<CommunityGuidelines />} />
                 <Route path="*" element={
                   <AnimatePresence mode="wait">

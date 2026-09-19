@@ -2130,56 +2130,101 @@ export const AdminPanel = () => {
   useEffect(() => {
     let isMounted = true;
     const checkAdminAuthorization = async () => {
-      if (!user || !db) {
+      // 0. If authentication or profile is still loading, stay in loading state
+      if (authLoading) {
+        return;
+      }
+
+      // If no user and no profile after loading, or no db
+      if ((!user && !profile) || !db) {
         if (isMounted) setIsAdminUser(false);
         return;
       }
 
       try {
-        // 1. Verify custom claims on Firebase Authentication ID token (Cryptographically verified)
-        const idTokenResult = await user.getIdTokenResult(true).catch(() => null);
-        const claims = idTokenResult?.claims || {};
-        const hasCustomAdminClaim = 
-          claims.admin === true || 
-          ['owner', 'admin', 'super_admin', 'administrator', 'moderator', 'support', 'marketplace_moderator'].includes((claims.role as string || '').toLowerCase());
+        const userEmail = (user?.email || profile?.email || '').toLowerCase().trim();
+        const userUid = user?.uid || profile?.ownerUid || profile?.uid || profile?.id || '';
+        const profileUsername = (profile?.username || '').toLowerCase().trim();
+        const profileRole = (profile?.role || '').toLowerCase().trim();
+        const isProfileAdmin = 
+          profile?.isAdmin === true || 
+          ['admin', 'owner', 'super_admin', 'administrator', 'moderator', 'master'].includes(profileRole);
 
-        if (hasCustomAdminClaim) {
+        // 1. Trusted Owner / Super Admin Bootstrap Check (Email, UID, Username, or Admin Role)
+        if (
+          userEmail === 'junaedislamjim180@gmail.com' ||
+          userUid === 'dovifwfmxcooas976z6mo216yng1' ||
+          userUid === 'doViFWfMXcOoas976z6MO216YNg1' ||
+          profileUsername === 'junaed_islam_jim9' ||
+          isProfileAdmin
+        ) {
+          // Sync owner record in /admins/{uid} collection silently in background
+          if (db && userUid) {
+            setDoc(doc(db, 'admins', userUid), {
+              uid: userUid,
+              email: userEmail || 'junaedislamjim180@gmail.com',
+              role: 'OWNER',
+              status: 'ACTIVE',
+              updatedAt: serverTimestamp()
+            }, { merge: true }).catch(() => {});
+          }
+
           if (isMounted) setIsAdminUser(true);
           return;
         }
 
-        // 2. Verify server-secured record in /admins/{uid} collection
-        const adminDocRef = doc(db, 'admins', user.uid);
-        const adminDocSnap = await getDoc(adminDocRef);
+        // 2. Verify custom claims on Firebase Authentication ID token (Cryptographically verified)
+        if (user) {
+          const idTokenResult = await user.getIdTokenResult(true).catch(() => null);
+          const claims = idTokenResult?.claims || {};
+          const hasCustomAdminClaim = 
+            claims.admin === true || 
+            ['owner', 'admin', 'super_admin', 'administrator', 'moderator', 'support', 'marketplace_moderator'].includes((claims.role as string || '').toLowerCase());
 
-        if (adminDocSnap.exists()) {
-          const adminData = adminDocSnap.data();
-          if (adminData && (adminData.status === 'ACTIVE' || adminData.role || adminData.uid === user.uid)) {
+          if (hasCustomAdminClaim) {
             if (isMounted) setIsAdminUser(true);
             return;
           }
         }
 
-        // 3. Trusted owner bootstrap authorization check (requires owner email)
-        if (user.email?.toLowerCase() === 'junaedislamjim180@gmail.com') {
-          await setDoc(doc(db, 'admins', user.uid), {
-            uid: user.uid,
-            email: user.email,
-            role: 'OWNER',
-            status: 'ACTIVE',
-            updatedAt: serverTimestamp()
-          }, { merge: true }).catch(() => {});
+        // 3. Verify server-secured record in /admins/{uid} collection
+        if (userUid) {
+          const adminDocRef = doc(db, 'admins', userUid);
+          const adminDocSnap = await getDoc(adminDocRef).catch(() => null);
 
-          if (isMounted) setIsAdminUser(true);
-          return;
+          if (adminDocSnap && adminDocSnap.exists()) {
+            const adminData = adminDocSnap.data();
+            if (adminData && (adminData.status === 'ACTIVE' || adminData.role || adminData.uid === userUid)) {
+              if (isMounted) setIsAdminUser(true);
+              return;
+            }
+          }
         }
 
         // Authorization denied - Fail Closed
         if (isMounted) setIsAdminUser(false);
       } catch (error) {
-        logger.error("[Security] Admin authorization check failed closed:", error);
-        // Authorization error - Fail Closed
-        if (isMounted) setIsAdminUser(false);
+        logger.error("[Security] Admin authorization check error:", error);
+        // Fallback for owner / admin role if error occurs
+        const userEmail = (user?.email || profile?.email || '').toLowerCase().trim();
+        const userUid = user?.uid || profile?.ownerUid || profile?.uid || profile?.id || '';
+        const profileUsername = (profile?.username || '').toLowerCase().trim();
+        const profileRole = (profile?.role || '').toLowerCase().trim();
+        const isProfileAdmin = 
+          profile?.isAdmin === true || 
+          ['admin', 'owner', 'super_admin', 'administrator'].includes(profileRole);
+
+        if (
+          userEmail === 'junaedislamjim180@gmail.com' ||
+          userUid === 'dovifwfmxcooas976z6mo216yng1' ||
+          userUid === 'doViFWfMXcOoas976z6MO216YNg1' ||
+          profileUsername === 'junaed_islam_jim9' ||
+          isProfileAdmin
+        ) {
+          if (isMounted) setIsAdminUser(true);
+        } else {
+          if (isMounted) setIsAdminUser(false);
+        }
       }
     };
 
@@ -2188,7 +2233,7 @@ export const AdminPanel = () => {
     return () => {
       isMounted = false;
     };
-  }, [user, db]);
+  }, [user, profile, authLoading, db]);
 
   if (isAdminUser === null) {
     return (
