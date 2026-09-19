@@ -14,7 +14,8 @@ import {
   Trash2, 
   Loader2, 
   AlertCircle,
-  Check
+  Check,
+  Eye
 } from 'lucide-react';
 import { 
   doc, 
@@ -606,10 +607,10 @@ export const PostDetailView: React.FC<PostDetailViewProps> = ({ postId, onClose,
             </div>
 
             {/* 2. RIGHT PANE: Instagram Post Sidebar (~400px) */}
-            <div className="w-[390px] lg:w-[410px] flex-shrink-0 bg-black border-l border-neutral-800 flex flex-col h-full text-white">
+            <div className="w-[390px] lg:w-[410px] flex-shrink-0 bg-[#080a0f]/90 backdrop-blur-2xl border-l border-white/10 flex flex-col h-full text-white">
               
               {/* Header */}
-              <div className="px-4 py-3 border-b border-neutral-800 flex items-center justify-between relative">
+              <div className="px-4 py-3 border-b border-white/10 bg-white/[0.02] flex items-center justify-between relative">
                 <div className="flex items-center gap-3 min-w-0">
                   <img 
                     src={post.author.avatar || BLANK_DP} 
@@ -868,60 +869,71 @@ export const PostDetailView: React.FC<PostDetailViewProps> = ({ postId, onClose,
               </div>
 
               {/* Engagement Bar */}
-              <div className="px-4 pt-3 pb-2.5 border-t border-neutral-800 bg-black flex flex-col gap-2">
+              <div className="px-4 pt-3 pb-3 border-t border-white/10 bg-black/40 backdrop-blur-md flex flex-col gap-2.5">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     <button 
+                      type="button"
                       onClick={handleLike}
-                      className="text-white hover:text-neutral-400 transition-transform active:scale-90 cursor-pointer"
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-300 active:scale-95 group font-black uppercase text-[11px] tracking-wider cursor-pointer ${
+                        isLiked 
+                          ? 'bg-aeirmist-magenta/10 border-aeirmist-magenta/30 text-aeirmist-magenta shadow-[0_0_15px_rgba(255,0,234,0.15)]' 
+                          : 'bg-white/5 border-white/5 text-white/40 hover:text-white hover:border-white/20 hover:bg-white/10'
+                      }`}
                       aria-label="Like post"
                     >
-                      <Heart 
-                        size={24} 
-                        fill={isLiked ? '#ef4444' : 'none'} 
-                        className={isLiked ? 'text-red-500' : 'text-white'} 
-                      />
+                      <Heart size={14} fill={isLiked ? "currentColor" : "none"} className={`transition-transform group-hover:scale-110 ${isLiked ? 'text-aeirmist-magenta' : 'text-current'}`} />
+                      <span>{likesCount.toLocaleString()}</span>
                     </button>
+
                     <button 
+                      type="button"
                       onClick={() => commentInputRef.current?.focus()}
-                      className="text-white hover:text-neutral-400 transition-transform active:scale-90 cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 text-white/40 hover:text-white hover:border-white/20 hover:bg-white/10 transition-all duration-300 active:scale-95 font-black uppercase text-[11px] tracking-wider cursor-pointer"
                       aria-label="Comment"
                     >
-                      <MessageCircle size={24} />
+                      <MessageCircle size={14} className="text-current" />
+                      <span>{comments.length.toLocaleString()}</span>
                     </button>
+
                     <button 
+                      type="button"
                       onClick={handleShare}
-                      className="text-white hover:text-neutral-400 transition-transform active:scale-90 cursor-pointer"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 text-white/40 hover:text-white hover:border-white/25 transition-all duration-300 active:scale-95 font-black uppercase text-[11px] tracking-wider group cursor-pointer"
                       aria-label="Share"
                     >
-                      <Share2 size={24} />
+                      <Share2 size={14} className="transition-transform group-hover:scale-110 group-hover:rotate-12" />
+                      <span>SHARE</span>
                     </button>
+
+                    <div className="flex items-center gap-1 px-2 py-1 text-white/30">
+                      <Eye size={14} className="text-white/20" />
+                      <span className="text-[10px] font-bold font-mono">{(post.viewsCount || 0).toLocaleString()}</span>
+                    </div>
                   </div>
 
                   <button 
+                    type="button"
                     onClick={handleBookmarkToggle}
-                    className="text-white hover:text-neutral-400 transition-transform active:scale-90 cursor-pointer"
-                    aria-label="Save post"
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-95 border cursor-pointer ${
+                      isBookmarked 
+                        ? 'bg-aeirmist-cyan/10 border-aeirmist-cyan/30 text-aeirmist-cyan shadow-[0_0_15px_rgba(0,242,255,0.15)]' 
+                        : 'bg-white/5 border-white/5 text-white/30 hover:text-white hover:border-white/25 hover:bg-white/10'
+                    }`}
+                    title="Save post"
                   >
-                    <Bookmark 
-                      size={24} 
-                      fill={isBookmarked ? 'white' : 'none'} 
-                      className={isBookmarked ? 'text-white' : 'text-white'} 
-                    />
+                    <Bookmark size={14} fill={isBookmarked ? "currentColor" : "none"} />
                   </button>
                 </div>
 
-                <div className="text-sm font-semibold text-white">
-                  {likesCount.toLocaleString()} {likesCount === 1 ? 'like' : 'likes'}
-                </div>
-
-                <div className="text-[10.5px] uppercase text-neutral-500 tracking-wider font-medium">
-                  {formattedDate}
+                <div className="flex items-center justify-between text-[11px] text-white/40 font-medium">
+                  <span>{likesCount.toLocaleString()} {likesCount === 1 ? 'like' : 'likes'}</span>
+                  <span className="uppercase tracking-wider text-[10px]">{formattedDate}</span>
                 </div>
               </div>
 
               {/* Comment Input Bar */}
-              <div className="px-4 py-3 border-t border-neutral-800 bg-black relative">
+              <div className="px-4 py-3 border-t border-white/10 bg-black/60 backdrop-blur-md relative">
                 {replyingTo && (
                   <div className="flex items-center justify-between text-xs text-sky-400 mb-2 bg-sky-500/10 px-2.5 py-1 rounded-md">
                     <span>Replying to @{replyingTo.authorName}</span>
@@ -1162,29 +1174,56 @@ export const PostDetailView: React.FC<PostDetailViewProps> = ({ postId, onClose,
               )}
 
               {/* Action Buttons Row */}
-              <div className="px-3.5 py-2.5 flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <button onClick={handleLike} className="active:scale-80 transition-transform cursor-pointer">
-                    <Heart 
-                      size={24} 
-                      fill={isLiked ? '#ef4444' : 'none'} 
-                      className={isLiked ? 'text-red-500' : 'text-white'} 
-                    />
+              <div className="px-3.5 py-2.5 flex items-center justify-between border-y border-white/5 bg-white/[0.01]">
+                <div className="flex items-center gap-1.5">
+                  <button 
+                    type="button"
+                    onClick={handleLike}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all duration-300 active:scale-95 group font-black uppercase text-[10px] tracking-wider cursor-pointer ${
+                      isLiked 
+                        ? 'bg-aeirmist-magenta/10 border-aeirmist-magenta/30 text-aeirmist-magenta shadow-[0_0_15px_rgba(255,0,234,0.15)]' 
+                        : 'bg-white/5 border-white/5 text-white/40 hover:text-white hover:border-white/20 hover:bg-white/10'
+                    }`}
+                  >
+                    <Heart size={14} fill={isLiked ? "currentColor" : "none"} className={isLiked ? 'text-aeirmist-magenta' : 'text-current'} />
+                    <span>{likesCount.toLocaleString()}</span>
                   </button>
-                  <button onClick={() => mobileInputRef.current?.focus()} className="active:scale-80 transition-transform cursor-pointer">
-                    <MessageCircle size={24} className="text-white" />
+
+                  <button 
+                    type="button"
+                    onClick={() => mobileInputRef.current?.focus()}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 text-white/40 hover:text-white hover:border-white/20 hover:bg-white/10 transition-all duration-300 active:scale-95 font-black uppercase text-[10px] tracking-wider cursor-pointer"
+                  >
+                    <MessageCircle size={14} className="text-current" />
+                    <span>{comments.length.toLocaleString()}</span>
                   </button>
-                  <button onClick={handleShare} className="active:scale-80 transition-transform cursor-pointer">
-                    <Share2 size={24} className="text-white" />
+
+                  <button 
+                    type="button"
+                    onClick={handleShare}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/5 bg-white/5 text-white/40 hover:text-white hover:border-white/25 transition-all duration-300 active:scale-95 font-black uppercase text-[10px] tracking-wider group cursor-pointer"
+                  >
+                    <Share2 size={14} className="transition-transform group-hover:scale-110 group-hover:rotate-12" />
+                    <span>SHARE</span>
                   </button>
+
+                  <div className="flex items-center gap-1 px-1.5 py-1 text-white/30">
+                    <Eye size={14} className="text-white/20" />
+                    <span className="text-[10px] font-bold font-mono">{(post.viewsCount || 0).toLocaleString()}</span>
+                  </div>
                 </div>
 
-                <button onClick={handleBookmarkToggle} className="active:scale-80 transition-transform cursor-pointer">
-                  <Bookmark 
-                    size={24} 
-                    fill={isBookmarked ? 'white' : 'none'} 
-                    className={isBookmarked ? 'text-white' : 'text-white'} 
-                  />
+                <button 
+                  type="button"
+                  onClick={handleBookmarkToggle}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300 active:scale-95 border cursor-pointer ${
+                    isBookmarked 
+                      ? 'bg-aeirmist-cyan/10 border-aeirmist-cyan/30 text-aeirmist-cyan shadow-[0_0_15px_rgba(0,242,255,0.15)]' 
+                      : 'bg-white/5 border-white/5 text-white/30 hover:text-white hover:border-white/25 hover:bg-white/10'
+                  }`}
+                  title="Save post"
+                >
+                  <Bookmark size={14} fill={isBookmarked ? "currentColor" : "none"} />
                 </button>
               </div>
 
