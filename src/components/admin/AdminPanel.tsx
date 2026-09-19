@@ -644,18 +644,22 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
 
   const formatAccountCreationDate = (user: any): string => {
     if (!user) return 'N/A';
-    const rawDate = user.createdAt || user.created_at || user.joinedAt || user.timestamp || user.dateCreated || user.metadata?.creationTime;
+    const rawDate = user.createdAt || user.created_at || user.joinedAt || user.timestamp || user.dateCreated || user.metadata?.creationTime || user.rawRecord?.createdAt || user.rawRecord?.created_at || user.rawRecord?.joinedAt || user.rawRecord?.timestamp;
     if (!rawDate) return 'N/A';
     try {
       let dateObj: Date | null = null;
       if (typeof rawDate?.toDate === 'function') {
         dateObj = rawDate.toDate();
+      } else if (typeof rawDate?.toMillis === 'function') {
+        dateObj = new Date(rawDate.toMillis());
       } else if (rawDate instanceof Date) {
         dateObj = rawDate;
       } else if (typeof rawDate === 'number') {
         dateObj = new Date(rawDate);
       } else if (typeof rawDate === 'string') {
         dateObj = new Date(rawDate);
+      } else if (rawDate && typeof rawDate === 'object' && typeof rawDate.seconds === 'number') {
+        dateObj = new Date(rawDate.seconds * 1000);
       }
       
       if (dateObj && !isNaN(dateObj.getTime())) {

@@ -160,6 +160,7 @@ export function normalizeAdminUser(record: any): NormalizedAdminUser {
   const displayName = isAnonymized ? 'Aeirmist User' : (record.displayName || username || 'Aeirmist User');
 
   return {
+    ...record,
     id,
     profileId,
     uid,
@@ -173,6 +174,8 @@ export function normalizeAdminUser(record: any): NormalizedAdminUser {
     status: record.status || (record.isBanned ? 'BANNED' : 'ACTIVE'),
     role: record.role || (record.isAdmin ? 'Administrator' : 'USER'),
     aeirmistLevel: record.aeirmistLevel || 0,
+    createdAt: record.createdAt || record.created_at || record.joinedAt || record.timestamp || record.dateCreated || record.metadata?.creationTime || null,
+    bio: record.bio || '',
     needsIdentityReview: !uid || Boolean(record.needsIdentityReview),
     rawRecord: record
   };
