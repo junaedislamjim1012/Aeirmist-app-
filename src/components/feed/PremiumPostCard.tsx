@@ -30,6 +30,7 @@ import { writingAssistant } from '../../services/WritingAssistantService';
 import { WritingToolsMenu } from '../common/WritingToolsMenu';
 import { ModerationWarningModal } from '../common/ModerationWarningModal';
 import { MessengerShare } from './MessengerShare';
+import { PostMusicPlayer } from './PostMusicPlayer';
 import { logger } from '@/src/utils/logger';
 
 const InsightsDashboard = React.lazy(() => import('../analytics/InsightsDashboard').then(m => ({ default: m.InsightsDashboard })));
@@ -1540,19 +1541,9 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
             </div>
           )}
 
-          {/* Floating waveforms tag for music items */}
+          {/* Interactive Music Player with Scroll AutoPlay & Global Mute Toggle */}
           {post.music && (
-            <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/[0.03] border border-white/5 w-fit ml-4 sm:ml-6 mb-3 select-none">
-              <div className="flex items-center gap-0.5 h-3">
-                <span className="w-0.5 h-2 my-auto bg-aeirmist-cyan animate-[pulse_1s_infinite_100ms] rounded-full" />
-                <span className="w-0.5 h-3.5 my-auto bg-aeirmist-cyan animate-[pulse_1s_infinite_400ms] rounded-full" />
-                <span className="w-0.5 h-1.5 my-auto bg-aeirmist-cyan animate-[pulse_1s_infinite_200ms] rounded-full" />
-                <span className="w-0.5 h-3 my-auto bg-aeirmist-cyan animate-[pulse_1s_infinite_600ms] rounded-full" />
-              </div>
-              <span className="text-[8px] sm:text-[9.5px] font-mono font-black uppercase text-white/30 tracking-wider">
-                Resonating Beat: <span className="text-white font-sans font-bold">{post.music.title}</span> • {post.music.artist}
-              </span>
-            </div>
+            <PostMusicPlayer music={post.music} className="mx-4 sm:mx-6 mb-3" />
           )}
 
           {/* Interactive premium Voice Note Player for recorded audio */}

@@ -35,6 +35,7 @@ import { getAvatarUrl, BLANK_DP } from '../../lib/avatar';
 import { formatAeirmistTimestamp } from '../../lib/date';
 import { SafeImage } from '../ui/SafeImage';
 import { VideoPlayer } from './VideoPlayer';
+import { PostMusicPlayer } from './PostMusicPlayer';
 import { logger } from '@/src/utils/logger';
 
 interface MediaItem {
@@ -712,6 +713,11 @@ export const PostDetailView: React.FC<PostDetailViewProps> = ({ postId, onClose,
                       <div className="flex items-center gap-3 text-[11px] text-neutral-500 mt-1.5 font-medium">
                         <span>{formattedTimeAgo}</span>
                       </div>
+                      {post.music && (
+                        <div className="mt-2.5">
+                          <PostMusicPlayer music={post.music} />
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1237,6 +1243,13 @@ export const PostDetailView: React.FC<PostDetailViewProps> = ({ postId, onClose,
                 <div className="px-3.5 py-1.5 text-sm text-neutral-200 leading-snug break-words">
                   <span className="font-semibold text-white mr-1.5">{post.author.name}</span>
                   <span>{post.content}</span>
+                </div>
+              )}
+
+              {/* Music Player */}
+              {post.music && (
+                <div className="px-3.5 my-2">
+                  <PostMusicPlayer music={post.music} />
                 </div>
               )}
 
