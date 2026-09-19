@@ -611,6 +611,68 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
   const [deleteModalUser, setDeleteModalUser] = useState<any | null>(null);
   const [deleteType, setDeleteType] = useState<'soft' | 'hard' | 'anonymize'>('soft');
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [userReports, setUserReports] = useState<any[]>([]);
+  const [loadingUserReports, setLoadingUserReports] = useState(false);
+
+  useEffect(() => {
+    if (!selectedUserForDrawer || !db) {
+      setUserReports([]);
+      return;
+    }
+    
+    const targetUid = getCanonicalUid(selectedUserForDrawer) || selectedUserForDrawer.uid || selectedUserForDrawer.id;
+    if (!targetUid) return;
+
+    setLoadingUserReports(true);
+    const q1 = query(
+      collection(db, 'reports'),
+      where('reportedUid', '==', targetUid),
+      limit(20)
+    );
+
+    const unsub = onSnapshot(q1, (snap) => {
+      setUserReports(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingUserReports(false);
+    }, (err) => {
+      logger.warn("User reports fetch error:", err);
+      setUserReports([]);
+      setLoadingUserReports(false);
+    });
+
+    return () => unsub();
+  }, [selectedUserForDrawer, db]);
+
+  const formatAccountCreationDate = (user: any): string => {
+    if (!user) return 'N/A';
+    const rawDate = user.createdAt || user.created_at || user.joinedAt || user.timestamp || user.dateCreated || user.metadata?.creationTime;
+    if (!rawDate) return 'N/A';
+    try {
+      let dateObj: Date | null = null;
+      if (typeof rawDate?.toDate === 'function') {
+        dateObj = rawDate.toDate();
+      } else if (rawDate instanceof Date) {
+        dateObj = rawDate;
+      } else if (typeof rawDate === 'number') {
+        dateObj = new Date(rawDate);
+      } else if (typeof rawDate === 'string') {
+        dateObj = new Date(rawDate);
+      }
+      
+      if (dateObj && !isNaN(dateObj.getTime())) {
+        return dateObj.toLocaleString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    } catch (e) {
+      logger.warn('Creation date parse error:', e);
+    }
+    return typeof rawDate === 'string' ? rawDate : 'N/A';
+  };
 
   useEffect(() => {
     if (!db) return;
@@ -927,47 +989,186 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="w-full max-w-xl h-full bg-[#06080c] border-l border-white/10 p-8 overflow-y-auto space-y-6 shadow-2xl"
+              className="w-full max-w-xl h-full bg-[#080a0f] border-l border-white/10 p-6 md:p-8 overflow-y-auto space-y-6 shadow-2xl"
             >
-              <div className="flex items-center justify-between pb-6 border-b border-white/10">
-                <div className="flex items-center gap-3">
-                  <img src={getAvatarUrl(selectedUserForDrawer.photoURL, selectedUserForDrawer.id)} alt="" className="w-14 h-14 rounded-2xl object-cover" />
-                  <div>
-                    <h3 className="text-base font-bold text-white">{selectedUserForDrawer.displayName || selectedUserForDrawer.username}</h3>
-                    <p className="text-[10px] font-mono text-aeirmist-cyan">@{selectedUserForDrawer.username || 'no_handle'} • UID: {selectedUserForDrawer.uid || 'UNKNOWN'}</p>
+              {/* Header */}
+              <div className="flex items-center justify-between pb-5 border-b border-white/10">
+                <div className="flex items-center gap-3.5 min-w-0">
+                  <div className="relative">
+                    <img 
+                      src={getAvatarUrl(selectedUserForDrawer.photoURL, selectedUserForDrawer.id)} 
+                      alt="" 
+                      className="w-14 h-14 rounded-2xl object-cover border border-white/10" 
+                    />
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[#080a0f] ${
+                      selectedUserForDrawer.isBanned || selectedUserForDrawer.status === 'BANNED' ? 'bg-red-500' :
+                      selectedUserForDrawer.status === 'SUSPENDED' ? 'bg-amber-500' :
+                      'bg-emerald-500'
+                    }`} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold text-white truncate">
+                        {selectedUserForDrawer.displayName || selectedUserForDrawer.username}
+                      </h3>
+                      {selectedUserForDrawer.isVerified && (
+                        <ShieldCheck className="text-aeirmist-cyan shrink-0" size={16} />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-mono text-white/50 mt-0.5">
+                      <span>@{selectedUserForDrawer.username || 'no_handle'}</span>
+                      <span>•</span>
+                      <span className="text-[10px] text-aeirmist-cyan font-bold">UID: {selectedUserForDrawer.uid || selectedUserForDrawer.id || 'N/A'}</span>
+                    </div>
                   </div>
                 </div>
                 <button 
                   onClick={() => setSelectedUserForDrawer(null)}
-                  className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/40 hover:text-white"
+                  className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-all shrink-0 cursor-pointer"
                 >
                   <X size={18} />
                 </button>
               </div>
 
               <div className="space-y-6">
+                {/* Facebook/Instagram Style Key User Overview Cards */}
                 <div className="grid grid-cols-3 gap-3">
-                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-white/40 block mb-1">Level</span>
-                    <span className="text-lg font-mono font-bold text-white">{selectedUserForDrawer.aeirmistLevel || 0}</span>
+                  <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40 block mb-1">Status</span>
+                    <span className={`text-xs font-bold font-mono uppercase ${
+                      selectedUserForDrawer.isBanned || selectedUserForDrawer.status === 'BANNED' ? 'text-red-400' :
+                      selectedUserForDrawer.status === 'SUSPENDED' ? 'text-amber-400' :
+                      'text-emerald-400'
+                    }`}>
+                      {selectedUserForDrawer.status || (selectedUserForDrawer.isBanned ? 'BANNED' : 'ACTIVE')}
+                    </span>
                   </div>
-                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-white/40 block mb-1">Status</span>
-                    <span className="text-xs font-mono font-bold text-aeirmist-cyan uppercase">{selectedUserForDrawer.status || 'ACTIVE'}</span>
+
+                  <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40 block mb-1">Account Role</span>
+                    <span className="text-xs font-bold font-mono text-aeirmist-cyan uppercase">
+                      {selectedUserForDrawer.role || (selectedUserForDrawer.isAdmin ? 'Admin' : 'User')}
+                    </span>
                   </div>
-                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-white/40 block mb-1">Verified</span>
-                    <span className="text-xs font-mono font-bold text-emerald-400">{selectedUserForDrawer.isVerified ? 'YES' : 'NO'}</span>
+
+                  <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 text-center">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-white/40 block mb-1">Verification</span>
+                    <span className={`text-xs font-bold font-mono ${selectedUserForDrawer.isVerified ? 'text-aeirmist-cyan' : 'text-white/40'}`}>
+                      {selectedUserForDrawer.isVerified ? 'VERIFIED' : 'UNVERIFIED'}
+                    </span>
                   </div>
                 </div>
 
-                {/* Dedicated Role & Access Control in Drawer */}
+                {/* Account Details & Metadata Section (Date & Time Subsection included) */}
+                <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-white/5">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-white/80 flex items-center gap-2">
+                      <User size={15} className="text-aeirmist-cyan" /> Account Information & Metadata
+                    </h4>
+                    <span className="text-[10px] font-mono text-white/40">Details</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="space-y-1 p-3 rounded-xl bg-black/30 border border-white/5">
+                      <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block">Email Address</span>
+                      <span className="font-mono text-white/90 break-all select-all">{selectedUserForDrawer.email || 'Not provided'}</span>
+                    </div>
+
+                    <div className="space-y-1 p-3 rounded-xl bg-black/30 border border-white/5">
+                      <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block flex items-center gap-1">
+                        <Clock size={11} className="text-aeirmist-cyan" /> Account Created Date & Time
+                      </span>
+                      <span className="font-mono text-aeirmist-cyan font-bold block select-all">
+                        {formatAccountCreationDate(selectedUserForDrawer)}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 p-3 rounded-xl bg-black/30 border border-white/5 sm:col-span-2">
+                      <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block">Bio</span>
+                      <span className="text-white/80 leading-relaxed block">{selectedUserForDrawer.bio || 'No bio provided.'}</span>
+                    </div>
+                  </div>
+
+                  {/* Activity Stats */}
+                  <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/5 text-center">
+                    <div className="p-2 rounded-xl bg-black/20">
+                      <span className="text-[9px] text-white/40 uppercase block">Level</span>
+                      <span className="text-xs font-bold font-mono text-white">{selectedUserForDrawer.aeirmistLevel || 0}</span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-black/20">
+                      <span className="text-[9px] text-white/40 uppercase block">Posts</span>
+                      <span className="text-xs font-bold font-mono text-white">{selectedUserForDrawer.postsCount || 0}</span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-black/20">
+                      <span className="text-[9px] text-white/40 uppercase block">Followers</span>
+                      <span className="text-xs font-bold font-mono text-white">{Array.isArray(selectedUserForDrawer.followers) ? selectedUserForDrawer.followers.length : (selectedUserForDrawer.followersCount || 0)}</span>
+                    </div>
+                    <div className="p-2 rounded-xl bg-black/20">
+                      <span className="text-[9px] text-white/40 uppercase block">Following</span>
+                      <span className="text-xs font-bold font-mono text-white">{Array.isArray(selectedUserForDrawer.following) ? selectedUserForDrawer.following.length : (selectedUserForDrawer.followingCount || 0)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Reports & Moderation Details Subsection (Instagram / Facebook Moderation Tool Style) */}
+                <div className="p-5 rounded-2xl bg-amber-500/[0.02] border border-amber-500/20 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400 flex items-center gap-2">
+                      <Flag size={15} /> Reports & Moderation History
+                    </h4>
+                    <span className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full font-bold uppercase ${
+                      userReports.length > 0 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    }`}>
+                      {userReports.length > 0 ? `${userReports.length} Reports Filed` : 'Clean Record'}
+                    </span>
+                  </div>
+
+                  {loadingUserReports ? (
+                    <div className="py-4 text-center text-xs font-mono text-white/40 animate-pulse flex items-center justify-center gap-2">
+                      <RefreshCw size={14} className="animate-spin text-amber-400" />
+                      Loading report history...
+                    </div>
+                  ) : userReports.length === 0 ? (
+                    <div className="p-3.5 rounded-xl bg-black/30 border border-white/5 text-center text-xs text-white/50 space-y-1">
+                      <p className="font-bold text-emerald-400 text-xs">No Safety Reports Found</p>
+                      <p className="text-[10px] text-white/40">No user or content reports have been filed against @{selectedUserForDrawer.username || 'this user'}.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                      {userReports.map((rep: any) => (
+                        <div key={rep.id} className="p-3 rounded-xl bg-black/40 border border-white/10 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-amber-300 uppercase text-[10px] tracking-wider px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                              {rep.category || rep.reason || 'General Violation'}
+                            </span>
+                            <span className={`text-[9px] font-mono font-bold uppercase px-2 py-0.5 rounded ${
+                              rep.status === 'resolved' ? 'bg-emerald-500/20 text-emerald-400' :
+                              rep.status === 'dismissed' ? 'bg-zinc-500/20 text-zinc-400' :
+                              'bg-red-500/20 text-red-400 animate-pulse'
+                            }`}>
+                              {rep.status || 'Pending'}
+                            </span>
+                          </div>
+                          {rep.details && (
+                            <p className="text-white/70 text-[11px] leading-snug">{rep.details}</p>
+                          )}
+                          <div className="flex items-center justify-between text-[9px] font-mono text-white/40 pt-1 border-t border-white/5">
+                            <span>Reporter: {rep.reporterUsername ? `@${rep.reporterUsername}` : 'Anonymous'}</span>
+                            <span>{rep.createdAt ? formatAccountCreationDate({ createdAt: rep.createdAt }) : 'Recently'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* System Role & Access Permissions */}
                 <div className="p-5 rounded-2xl bg-aeirmist-cyan/[0.03] border border-aeirmist-cyan/20 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-aeirmist-cyan flex items-center gap-2">
-                      <Key size={14} /> System Role & Access Permissions
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-aeirmist-cyan flex items-center gap-2">
+                      <Key size={15} /> Account Role & Permissions
                     </h4>
-                    <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-aeirmist-cyan/20 text-aeirmist-cyan uppercase">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-aeirmist-cyan/20 text-aeirmist-cyan uppercase font-bold">
                       {selectedUserForDrawer.role || 'USER'}
                     </span>
                   </div>
@@ -998,15 +1199,18 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
                   </div>
                 </div>
 
+                {/* Quick Smart Actions */}
                 <div className="space-y-3">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-white/60">Quick Smart Actions</h4>
-                  <div className="grid grid-cols-2 gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white/60">Quick Actions</h4>
+                  <div className="grid grid-cols-2 gap-2.5">
                     <button 
                       onClick={() => { setSuspendingUser(selectedUserForDrawer); setSelectedUserForDrawer(null); }}
-                      className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-black uppercase tracking-wider hover:bg-amber-500/20 transition-all text-left"
+                      className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider hover:bg-amber-500/20 transition-all text-left flex items-center justify-between"
                     >
-                      Suspend User...
+                      <span>Suspend User...</span>
+                      <Clock size={14} />
                     </button>
+
                     <button 
                       onClick={() => {
                         const targetUid = getCanonicalUid(selectedUserForDrawer);
@@ -1016,10 +1220,12 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
                         }
                         toggleUserBan(targetUid, !selectedUserForDrawer.isBanned);
                       }}
-                      className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-black uppercase tracking-wider hover:bg-red-500/20 transition-all text-left"
+                      className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider hover:bg-red-500/20 transition-all text-left flex items-center justify-between"
                     >
-                      {selectedUserForDrawer.isBanned ? 'Unban User' : 'Ban Node'}
+                      <span>{selectedUserForDrawer.isBanned ? 'Unban User' : 'Ban User'}</span>
+                      <UserX size={14} />
                     </button>
+
                     <button 
                       onClick={() => {
                         const profileId = selectedUserForDrawer.profileId || getProfileId(selectedUserForDrawer);
@@ -1029,26 +1235,29 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
                         }
                         toggleVerification(profileId, !selectedUserForDrawer.isVerified);
                       }}
-                      className="p-3 rounded-xl bg-aeirmist-cyan/10 border border-aeirmist-cyan/20 text-aeirmist-cyan text-xs font-black uppercase tracking-wider hover:bg-aeirmist-cyan/20 transition-all text-left"
+                      className="p-3.5 rounded-xl bg-aeirmist-cyan/10 border border-aeirmist-cyan/20 text-aeirmist-cyan text-xs font-bold uppercase tracking-wider hover:bg-aeirmist-cyan/20 transition-all text-left flex items-center justify-between"
                     >
-                      {selectedUserForDrawer.isVerified ? 'Remove Verification' : 'Verify Node'}
+                      <span>{selectedUserForDrawer.isVerified ? 'Remove Verification' : 'Verify Account'}</span>
+                      <ShieldCheck size={14} />
                     </button>
+
                     <button 
                       onClick={() => { setDeleteModalUser(selectedUserForDrawer); setSelectedUserForDrawer(null); }}
-                      className="p-3 rounded-xl bg-red-500/20 border border-red-500/30 text-red-500 text-xs font-black uppercase tracking-wider hover:bg-red-500/30 transition-all text-left"
+                      className="p-3.5 rounded-xl bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-wider hover:bg-red-500/30 transition-all text-left flex items-center justify-between"
                     >
-                      Delete System...
+                      <span>Delete Account...</span>
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
 
-                {/* Admin Session Control & Force Actions */}
+                {/* Admin Security & Session Control */}
                 <div className="p-5 rounded-2xl bg-red-500/[0.03] border border-red-500/20 space-y-3">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black uppercase tracking-widest text-red-400 flex items-center gap-2">
-                      <Shield size={14} /> Admin Security & Session Control
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-red-400 flex items-center gap-2">
+                      <Shield size={15} /> Security & Session Control
                     </h4>
-                    <span className="text-[9px] font-mono text-white/40">Audit Monitored</span>
+                    <span className="text-[10px] font-mono text-white/40">Audit Monitored</span>
                   </div>
 
                   <div className="grid grid-cols-1 gap-2">
@@ -1075,7 +1284,7 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
                           addToast({ title: 'Error', message: 'Failed to revoke user sessions.', type: 'warning' });
                         }
                       }}
-                      className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider hover:bg-red-500/20 transition-all text-left flex items-center justify-between"
+                      className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold uppercase tracking-wider hover:bg-red-500/20 transition-all text-left flex items-center justify-between cursor-pointer"
                     >
                       <span>Force Logout All Active Sessions</span>
                       <LogOut size={14} />
@@ -1097,23 +1306,15 @@ const UsersTab = ({ db, addToast, purgeUser, toggleUserBan, toggleVerification, 
                             addToast({ title: 'Error', message: 'Failed to trigger password reset.', type: 'warning' });
                           }
                         }}
-                        className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider hover:bg-amber-500/20 transition-all text-left flex items-center justify-between"
+                        className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider hover:bg-amber-500/20 transition-all text-left flex items-center justify-between cursor-pointer"
                       >
-                        <span>Require Password Reset Email</span>
+                        <span>Send Password Reset Email</span>
                         <Key size={14} />
                       </button>
                     )}
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-white/60">Profile Metadata</h4>
-                  <div className="p-4 rounded-2xl bg-black/40 border border-white/5 space-y-2 text-xs font-mono">
-                    <p className="text-white/60"><span className="text-white/30">Email:</span> {selectedUserForDrawer.email || 'Not provided'}</p>
-                    <p className="text-white/60"><span className="text-white/30">Bio:</span> {selectedUserForDrawer.bio || 'No bio'}</p>
-                    <p className="text-white/60"><span className="text-white/30">Created:</span> {selectedUserForDrawer.createdAt || 'N/A'}</p>
-                  </div>
-                </div>
               </div>
             </motion.div>
           </div>
