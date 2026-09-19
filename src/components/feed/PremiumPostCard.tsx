@@ -30,7 +30,7 @@ import { writingAssistant } from '../../services/WritingAssistantService';
 import { WritingToolsMenu } from '../common/WritingToolsMenu';
 import { ModerationWarningModal } from '../common/ModerationWarningModal';
 import { MessengerShare } from './MessengerShare';
-import { PostMusicPlayer } from './PostMusicPlayer';
+import { PostMusicPlayer, getPostMusicData } from './PostMusicPlayer';
 import { logger } from '@/src/utils/logger';
 
 const InsightsDashboard = React.lazy(() => import('../analytics/InsightsDashboard').then(m => ({ default: m.InsightsDashboard })));
@@ -128,6 +128,8 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
 
   const type = (post.mediaItems?.length || 0) > 1 ? 'collage' : (post.mediaItems?.length === 1 ? (post.mediaType || 'photo') : 'text') as any;
   usePostAnalytics({ postId: post.id, type });
+
+  const postMusicData = getPostMusicData(post);
 
   const isDeletedAuthor = Boolean(
     (post as any).isDeletedAuthor || 
@@ -1541,9 +1543,9 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
             </div>
           )}
 
-          {/* Interactive Music Player with Scroll AutoPlay & Global Mute Toggle */}
-          {post.music && (
-            <PostMusicPlayer music={post.music} className="mx-4 sm:mx-6 mb-3" />
+          {/* Interactive Music Tag under caption */}
+          {postMusicData && (
+            <PostMusicPlayer music={postMusicData} variant={hasMedia ? 'pill' : 'full'} className="mx-4 sm:mx-6 mb-3" />
           )}
 
           {/* Interactive premium Voice Note Player for recorded audio */}
@@ -1640,16 +1642,13 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
           {/* Facebook-style Multi-photo collage grid */}
           {hasMedia && (
             <div
-              className="w-full border-y border-white/5 bg-black/20 cursor-pointer"
+              className="w-full border-y border-white/5 bg-black/20 cursor-pointer relative"
               onClickCapture={(e) => {
                 if ((post as any).type === 'video') {
                   e.preventDefault();
                   e.stopPropagation();
                   onNavigate?.('videos');
                 } else if (!showComments) {
-                  // If not a video and we are in feed view, we might want to open detail view
-                  // But Collage has its own lightbox. Let's see.
-                  // If we want a separate URL, we should trigger onPostClick
                   onPostClick?.(post.id);
                 }
               }}
@@ -1660,6 +1659,13 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
                 onItemClick={() => onPostClick?.(post.id)}
                 renderLightboxSidebar={renderLightboxSidebar}
               />
+
+              {/* Instagram-Style Floating Mute Overlay Button on bottom right of media */}
+              {postMusicData && (
+                <div className="absolute bottom-3 right-3 z-30 pointer-events-auto">
+                  <PostMusicPlayer music={postMusicData} variant="floating-mute" />
+                </div>
+              )}
             </div>
           )}
         </div>
