@@ -1429,15 +1429,19 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
               )}
             </div>
             
-            <p className="text-[8px] sm:text-[10px] font-black uppercase tracking-[0.1em] text-white/20 mt-0.5 flex items-center gap-1 select-none font-mono truncate">
-              {post.location ? (
-                <>
-                  <Compass size={9} className="text-white/30 sm:w-[10px] sm:h-[10px]" />
-                  {post.location} • 
-                </>
-              ) : null}
-              {formatAeirmistTimestamp(post.createdAt || post.timestamp)}
-            </p>
+            {postMusicData ? (
+              <PostMusicPlayer music={postMusicData} variant="header-sub" />
+            ) : (
+              <p className="text-[8px] sm:text-[10px] font-black uppercase tracking-[0.1em] text-white/20 mt-0.5 flex items-center gap-1 select-none font-mono truncate">
+                {post.location ? (
+                  <>
+                    <Compass size={9} className="text-white/30 sm:w-[10px] sm:h-[10px]" />
+                    {post.location} • 
+                  </>
+                ) : null}
+                {formatAeirmistTimestamp(post.createdAt || post.timestamp)}
+              </p>
+            )}
           </div>
         </div>
         
@@ -1543,11 +1547,6 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
             </div>
           )}
 
-          {/* Interactive Music Tag under caption */}
-          {postMusicData && (
-            <PostMusicPlayer music={postMusicData} variant={hasMedia ? 'pill' : 'full'} className="mx-4 sm:mx-6 mb-3" />
-          )}
-
           {/* Interactive premium Voice Note Player for recorded audio */}
           {(post as any).voice && (
             <div className="mx-4 sm:mx-6 mb-4 p-3 sm:p-4 rounded-2xl bg-[#00f3ff]/5 border border-[#00f3ff]/15 flex items-center justify-between gap-4 select-none">
@@ -1640,7 +1639,7 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
           )}
 
           {/* Facebook-style Multi-photo collage grid */}
-          {hasMedia && (
+          {hasMedia ? (
             <div
               className="w-full border-y border-white/5 bg-black/20 cursor-pointer relative"
               onClickCapture={(e) => {
@@ -1660,12 +1659,17 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
                 renderLightboxSidebar={renderLightboxSidebar}
               />
 
-              {/* Instagram-Style Floating Mute Overlay Button on bottom right of media */}
+              {/* Instagram-Style Small Round Mute Button on bottom right of media */}
               {postMusicData && (
                 <div className="absolute bottom-3 right-3 z-30 pointer-events-auto">
-                  <PostMusicPlayer music={postMusicData} variant="floating-mute" />
+                  <PostMusicPlayer music={postMusicData} variant="small-mute" />
                 </div>
               )}
+            </div>
+          ) : postMusicData && (
+            /* Text-only post with music: Render small round mute button on bottom right of post body */
+            <div className="flex justify-end px-4 mb-2">
+              <PostMusicPlayer music={postMusicData} variant="small-mute" />
             </div>
           )}
         </div>

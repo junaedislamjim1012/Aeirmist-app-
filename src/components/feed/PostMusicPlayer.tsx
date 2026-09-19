@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Volume2, VolumeX, Play, Pause, Disc } from 'lucide-react';
+import { Volume2, VolumeX, Play, Pause, Disc, Music } from 'lucide-react';
 import { logger } from '@/src/utils/logger';
 
 export interface PostMusicData {
@@ -45,7 +45,7 @@ export const getPostMusicData = (post: any): PostMusicData | null => {
 
 interface PostMusicPlayerProps {
   music: PostMusicData;
-  variant?: 'full' | 'pill' | 'floating-mute';
+  variant?: 'full' | 'pill' | 'floating-mute' | 'small-mute' | 'header-sub';
   className?: string;
 }
 
@@ -115,7 +115,6 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
               .then(() => setIsPlaying(true))
               .catch((err) => {
                 logger.info('Scroll autoplay attempt:', err);
-                // Fallback: play muted if unmuted playback blocked by browser
                 if (!audio.muted) {
                   audio.muted = true;
                   audio.play().then(() => setIsPlaying(true)).catch(() => {});
@@ -171,8 +170,41 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
 
   if (!audioUrl && !title) return null;
 
-  // Render Variant 1: Floating Instagram Mute Overlay Button
-  if (variant === 'floating-mute') {
+  // Render Variant 1: Header Subtitle (Under ID Name in Header)
+  if (variant === 'header-sub') {
+    return (
+      <div 
+        ref={containerRef}
+        onClick={togglePlay}
+        className={`flex items-center gap-1.5 text-[10.5px] sm:text-xs text-white/80 font-medium select-none cursor-pointer group mt-0.5 truncate ${className}`}
+        title={`${title} • ${artist}`}
+      >
+        {audioUrl && (
+          <audio 
+            ref={audioRef} 
+            src={audioUrl} 
+            loop 
+            preload="metadata"
+          />
+        )}
+        
+        {/* Animated Sound Equalizer icon */}
+        <div className="flex items-center gap-0.5 h-3 shrink-0">
+          <span className={`w-0.5 rounded-full bg-aeirmist-cyan ${isPlaying ? 'h-2.5 animate-[pulse_0.7s_infinite_100ms]' : 'h-1.5 opacity-50'}`} />
+          <span className={`w-0.5 rounded-full bg-aeirmist-cyan ${isPlaying ? 'h-3.5 animate-[pulse_0.7s_infinite_300ms]' : 'h-2.5 opacity-50'}`} />
+          <span className={`w-0.5 rounded-full bg-aeirmist-cyan ${isPlaying ? 'h-2 animate-[pulse_0.7s_infinite_200ms]' : 'h-1 opacity-50'}`} />
+        </div>
+
+        <span className="truncate group-hover:text-aeirmist-cyan transition-colors">
+          <span className="font-bold text-white">{title}</span>
+          {artist && <span className="text-white/40 font-normal"> • {artist}</span>}
+        </span>
+      </div>
+    );
+  }
+
+  // Render Variant 2: Small Round Mute Button (Only Volume Icon - No Text)
+  if (variant === 'small-mute' || variant === 'floating-mute') {
     return (
       <div ref={containerRef} className={`inline-block ${className}`}>
         {audioUrl && (
@@ -188,19 +220,19 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
           onClick={toggleMute}
           aria-label={isMuted ? "Unmute audio" : "Mute audio"}
           title={isMuted ? "Unmute Audio" : "Mute Audio"}
-          className={`w-8 h-8 rounded-full flex items-center justify-center border backdrop-blur-md shadow-lg transition-all active:scale-95 cursor-pointer z-30 ${
+          className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border backdrop-blur-md shadow-xl transition-all active:scale-90 cursor-pointer z-30 ${
             isMuted 
-              ? 'bg-black/70 border-white/20 text-white/70 hover:text-white hover:bg-black/90' 
+              ? 'bg-black/65 border-white/20 text-white/70 hover:text-white hover:bg-black/90' 
               : 'bg-black/80 border-aeirmist-cyan/50 text-aeirmist-cyan shadow-[0_0_12px_rgba(0,242,255,0.35)] hover:bg-black'
           }`}
         >
-          {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} className="animate-pulse" />}
+          {isMuted ? <VolumeX size={13} className="text-white/70" /> : <Volume2 size={13} className="text-aeirmist-cyan animate-pulse" />}
         </button>
       </div>
     );
   }
 
-  // Render Variant 2: Compact Top Pill (Track title + vinyl disc + equalizer)
+  // Render Variant 3: Compact Top Pill (Track title + vinyl disc + equalizer)
   if (variant === 'pill') {
     return (
       <div 
@@ -217,14 +249,12 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
           />
         )}
         
-        {/* Equalizer Waveforms */}
         <div className="flex items-center gap-0.5 h-3 shrink-0">
           <span className={`w-0.5 rounded-full bg-aeirmist-cyan ${isPlaying ? 'h-2.5 animate-[pulse_0.7s_infinite_100ms]' : 'h-1.5 opacity-50'}`} />
           <span className={`w-0.5 rounded-full bg-aeirmist-cyan ${isPlaying ? 'h-3.5 animate-[pulse_0.7s_infinite_300ms]' : 'h-2.5 opacity-50'}`} />
           <span className={`w-0.5 rounded-full bg-aeirmist-cyan ${isPlaying ? 'h-2 animate-[pulse_0.7s_infinite_200ms]' : 'h-1 opacity-50'}`} />
         </div>
 
-        {/* Vinyl Disc Icon */}
         <div className="relative w-4 h-4 rounded-full bg-black shrink-0 overflow-hidden border border-white/10 flex items-center justify-center">
           {cover ? (
             <img src={cover} alt="" className={`w-full h-full object-cover ${isPlaying ? 'animate-spin-slow' : ''}`} />
@@ -233,7 +263,6 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
           )}
         </div>
 
-        {/* Song info */}
         <span className="text-[10px] sm:text-xs font-bold text-white/90 truncate max-w-[180px] sm:max-w-[260px] group-hover:text-aeirmist-cyan transition-colors">
           {title} <span className="text-white/40 font-mono text-[9px] font-normal">• {artist}</span>
         </span>
@@ -241,7 +270,7 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
     );
   }
 
-  // Render Variant 3 (Default): Full Banner
+  // Render Variant 4 (Default): Full Banner
   return (
     <div 
       ref={containerRef}
@@ -256,7 +285,6 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
         />
       )}
 
-      {/* Left: Disc Artwork & Equalizer + Track Info */}
       <div 
         onClick={togglePlay}
         className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer group"
@@ -292,29 +320,18 @@ export const PostMusicPlayer: React.FC<PostMusicPlayerProps> = ({
         </div>
       </div>
 
-      {/* Right: Mute/Unmute Pill Button */}
       <button
         type="button"
         onClick={toggleMute}
         aria-label={isMuted ? "Unmute audio" : "Mute audio"}
         title={isMuted ? "Unmute Audio" : "Mute Audio"}
-        className={`h-8 px-2.5 rounded-xl border flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-wider transition-all cursor-pointer shrink-0 ${
+        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
           isMuted 
             ? 'bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10'
             : 'bg-aeirmist-cyan/20 border-aeirmist-cyan/40 text-aeirmist-cyan shadow-[0_0_12px_rgba(0,242,255,0.25)]'
         }`}
       >
-        {isMuted ? (
-          <>
-            <VolumeX size={14} className="text-white/60" />
-            <span className="uppercase text-[9px] hidden sm:inline">Muted</span>
-          </>
-        ) : (
-          <>
-            <Volume2 size={14} className="text-aeirmist-cyan animate-pulse" />
-            <span className="uppercase text-[9px] hidden sm:inline">Sound On</span>
-          </>
-        )}
+        {isMuted ? <VolumeX size={14} className="text-white/60" /> : <Volume2 size={14} className="text-aeirmist-cyan animate-pulse" />}
       </button>
     </div>
   );
