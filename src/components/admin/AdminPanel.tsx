@@ -2113,7 +2113,7 @@ const VerificationRequestsTab = ({ db, addToast }: { db: any; addToast: any }) =
 };
 
 export const AdminPanel = () => {
-  const { user, profile, db, addToast, purgeUser, toggleUserBan, toggleVerification, updateUserStatus, suspendUser } = useAeirmist();
+  const { user, profile, loading: authLoading, db, addToast, purgeUser, toggleUserBan, toggleVerification, updateUserStatus, suspendUser } = useAeirmist();
   const [isAdminUser, setIsAdminUser] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'reports' | 'appeals' | 'marketplace' | 'security' | 'roles' | 'flags' | 'logs' | 'verification' | 'tickets' | 'system'>('dashboard');
   const [isAddAdminOpen, setIsAddAdminOpen] = useState(false);
