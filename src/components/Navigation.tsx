@@ -217,7 +217,7 @@ export const Navigation = React.memo(({ onCreate, activeTab, onTabChange, isExpa
               label="Control Panel" 
               active={activeTab === 'admin'} 
               isExpanded={isCurrentlyExpanded} 
-              onClick={() => handleItemClick(() => { onTabChange('admin' as any); if (window.location.pathname !== '/admin-panel' && window.location.pathname !== '/admin') { window.history.pushState({}, '', '/admin-panel'); } })} 
+              onClick={() => handleItemClick(() => onTabChange('admin' as any))} 
             />
           )}
         </div>

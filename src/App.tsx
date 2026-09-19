@@ -208,6 +208,7 @@ const ComingSoonScreen = ({ sectorName, onHomeClick }: { sectorName: string; onH
 function AppContent() {
   const { settings, updateAppearanceSettings } = useAppearance();
   const location = useLocation();
+  const navigate = useNavigate();
   const isGuidelinesPage = location.pathname === '/community-guidelines';
   const { 
     loading, 
@@ -911,8 +912,8 @@ function AppContent() {
 
     // Push state ONLY when the target URL pathname changes!
     // If the path is identical, use replaceState to prevent duplicate history loops.
-    if (window.location.pathname !== targetUrl) {
-      window.history.pushState(stateToPush, '', targetUrl);
+    if (location.pathname !== targetUrl) {
+      navigate(targetUrl, { state: stateToPush });
     } else {
       window.history.replaceState(stateToPush, '', targetUrl);
     }
@@ -928,7 +929,9 @@ function AppContent() {
     isNotificationsOpen, 
     isAccountSwitcherOpen, 
     storyState, 
-    settingsSection
+    settingsSection,
+    location.pathname,
+    navigate
   ]);
 
   // Listen to popstate event (back/forward button)
@@ -1548,8 +1551,6 @@ function AppContent() {
               <Routes>
                 <Route path="/payment-success" element={<Suspense fallback={null}><PaymentResult status="success" /></Suspense>} />
                 <Route path="/payment-failure" element={<Suspense fallback={null}><PaymentResult status="failure" /></Suspense>} />
-                <Route path="/admin-panel" element={<AdminPanel />} />
-                <Route path="/admin" element={<AdminPanel />} />
                 <Route path="/community-guidelines" element={<CommunityGuidelines />} />
                 <Route path="*" element={
                   <AnimatePresence mode="wait">
