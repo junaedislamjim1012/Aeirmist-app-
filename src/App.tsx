@@ -113,6 +113,7 @@ const CompleteYourAccountScreen = lazyWithRetry(() => import('./components/auth/
 const PasswordOnboardingModal = lazyWithRetry(() => import('./components/auth/PasswordOnboardingModal').then((m: any) => ({ default: m.PasswordOnboardingModal || m.default })));
 const SetupRequiredScreen = lazyWithRetry(() => import('./components/auth/SetupScreens').then((m: any) => ({ default: m.SetupRequiredScreen || m.default })));
 const PairingFailedScreen = lazyWithRetry(() => import('./components/auth/SetupScreens').then((m: any) => ({ default: m.PairingFailedScreen || m.default })));
+const Vault = lazyWithRetry(() => import('./components/messenger/Vault').then((m: any) => ({ default: m.Vault || m.default })));
 const PurgeScreen = lazyWithRetry(() => import('./components/auth/SetupScreens').then((m: any) => ({ default: m.PurgeScreen || m.default })));
 const DeactivatedScreen = lazyWithRetry(() => import('./components/auth/SetupScreens').then((m: any) => ({ default: m.DeactivatedScreen || m.default })));
 const BannedScreen = lazyWithRetry(() => import('./components/auth/BannedScreen').then((m: any) => ({ default: m.BannedScreen || m.default })));
@@ -236,7 +237,13 @@ function AppContent() {
     storyUpload,
     needsPasswordOnboarding,
     featureFlags,
-    addToast
+    addToast,
+    isVaultOpen,
+    setIsVaultOpen,
+    isVaultUnlocked,
+    setIsVaultUnlocked,
+    allProfiles,
+    chats
   } = useAeirmist();
   const { isLoading: isThemeLoading } = useTheme();
 
@@ -1853,6 +1860,35 @@ function AppContent() {
               }
             }}
           />
+
+          {/* Global Vault Modal Overlay */}
+          <AnimatePresence>
+            {isVaultOpen && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.98 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-2xl flex flex-col overflow-hidden"
+              >
+                <Suspense fallback={<LazyFallback />}>
+                  <Vault
+                    db={db}
+                    profile={profile}
+                    chats={chats || []}
+                    onSelectChat={(chatId) => {
+                      setActiveTab('messenger');
+                      setIsVaultOpen(false);
+                    }}
+                    onClose={() => setIsVaultOpen(false)}
+                    isUnlocked={isVaultUnlocked}
+                    setIsUnlocked={setIsVaultUnlocked}
+                    allProfiles={allProfiles || []}
+                  />
+                </Suspense>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Development / Debugging UI */}
         </motion.div>

@@ -827,19 +827,36 @@ export const PremiumPostCard = React.memo<PostCardProps>(({ post, onUserClick, o
       return;
     }
     try {
-      // 1. Move media to vault_media
-      for (const item of collageItems) {
+      if (collageItems && collageItems.length > 0) {
+        // Move each media item to vault_media with post text content attached
+        for (const item of collageItems) {
+          await addDoc(collection(db, 'vault_media'), {
+            userId: profile.id,
+            url: item.url,
+            type: item.type || 'image',
+            name: `Vaulted Post from @${post.authorName || post.userName || 'User'}`,
+            content: post.content || '',
+            createdAt: serverTimestamp(),
+            isFavorite: false
+          });
+        }
+      } else {
+        // Text-only post or single media fallback
+        const mediaUrl = post.mediaUrl || post.mediaURL || (post.mediaUrls && post.mediaUrls[0]) || '';
+        const mediaType = post.mediaType || (mediaUrl ? 'image' : 'text');
+        
         await addDoc(collection(db, 'vault_media'), {
           userId: profile.id,
-          url: item.url,
-          type: item.type,
-          name: `Vaulted Post from @${post.authorName || post.userName || 'User'}`,
+          url: mediaUrl,
+          type: mediaType,
+          content: post.content || '',
+          name: post.content ? (post.content.length > 30 ? post.content.slice(0, 30) + '...' : post.content) : `Vaulted Post from @${post.authorName || post.userName || 'User'}`,
           createdAt: serverTimestamp(),
           isFavorite: false
         });
       }
 
-      // 2. Delete original post
+      // Delete original post
       await deletePost(post.id);
       
       if (addToast) {

@@ -342,6 +342,11 @@ interface AeirmistContextType {
   setIsSafeMode: React.Dispatch<React.SetStateAction<boolean>>;
   needsPasswordOnboarding: boolean;
   setNeedsPasswordOnboarding: React.Dispatch<React.SetStateAction<boolean>>;
+  isVaultOpen: boolean;
+  setIsVaultOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  isVaultUnlocked: boolean;
+  setIsVaultUnlocked: React.Dispatch<React.SetStateAction<boolean>>;
+  openVault: () => void;
 }
 
 const handleFirestoreError = (error: any, op: any, path: string | null) => {
@@ -528,6 +533,13 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return false;
   });
   const [connectionError, setConnectionError] = useState<string | null>(null);
+
+  const [isVaultOpen, setIsVaultOpen] = useState(false);
+  const [isVaultUnlocked, setIsVaultUnlocked] = useState(false);
+
+  const openVault = useCallback(() => {
+    setIsVaultOpen(true);
+  }, []);
 
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
@@ -5863,6 +5875,11 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsSafeMode,
     needsPasswordOnboarding,
     setNeedsPasswordOnboarding,
+    isVaultOpen,
+    setIsVaultOpen,
+    isVaultUnlocked,
+    setIsVaultUnlocked,
+    openVault,
     featureFlags,
     updateFeatureFlag,
     appBranding,
@@ -5891,7 +5908,8 @@ export const AeirmistProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     clearChat, togglePinMessage, deleteMessage, editMessage,
     deviceLinkingStatus, generateDeviceLink, consumePairingCode,
     localAvatarURL, localCoverURL, profileUploadProgress, coverUploadProgress,
-    isSafeMode, setIsSafeMode, needsPasswordOnboarding, setNeedsPasswordOnboarding
+    isSafeMode, setIsSafeMode, needsPasswordOnboarding, setNeedsPasswordOnboarding,
+    isVaultOpen, setIsVaultOpen, isVaultUnlocked, setIsVaultUnlocked, openVault
   ]);
 
   return (
