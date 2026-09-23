@@ -95,7 +95,7 @@ public class MainActivity extends BridgeActivity {
         try {
             if (this.bridge != null && this.bridge.getWebView() != null) {
                 WebView webView = this.bridge.getWebView();
-                if (level >= TRIM_MEMORY_MODERATE) {
+                if (level == TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_MODERATE) {
                     webView.clearCache(false);
                 }
             }
