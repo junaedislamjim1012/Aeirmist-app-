@@ -2,6 +2,7 @@
 // All imports MUST be at the top of the file (ESM standard)
 // ============================================================
 import { StrictMode } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { createRoot } from 'react-dom/client';
 import { HelmetProvider } from 'react-helmet-async';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -17,7 +18,7 @@ import './index.css';
 // ============================================================
 // Register Service Worker for PWA/TWA support
 // ============================================================
-if ('serviceWorker' in navigator) {
+if (!Capacitor.isNativePlatform() && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     try {
       navigator.serviceWorker.register('./sw.js')
