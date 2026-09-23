@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.graphics.Color;
 import android.view.View;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -21,11 +22,14 @@ public class MainActivity extends BridgeActivity {
         try {
             if (this.bridge != null && this.bridge.getWebView() != null) {
                 WebView webView = this.bridge.getWebView();
+                webView.setLayerType(View.LAYER_TYPE_NONE, null);
+                webView.setBackgroundColor(Color.rgb(5, 5, 8));
                 WebSettings settings = webView.getSettings();
                 settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
                 settings.setLoadsImagesAutomatically(true);
                 settings.setOffscreenPreRaster(false);
+                settings.setMediaPlaybackRequiresUserGesture(false);
             }
         } catch (Exception ignored) {
         }
