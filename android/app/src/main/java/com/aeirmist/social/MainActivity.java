@@ -59,12 +59,21 @@ public class MainActivity extends BridgeActivity {
         try {
             if (this.bridge != null && this.bridge.getWebView() != null) {
                 WebView webView = this.bridge.getWebView();
-                webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                // Let Chromium handle GPU compositing dynamically to save VRAM on budget Mali/PowerVR GPUs
+                webView.setLayerType(View.LAYER_TYPE_NONE, null);
+                // Prevent white flash during cold start or configuration change
+                webView.setBackgroundColor(0xFF050508);
+
                 WebSettings settings = webView.getSettings();
                 settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
                 settings.setLoadsImagesAutomatically(true);
-                settings.setOffscreenPreRaster(true);
+                // DO NOT enable setOffscreenPreRaster to prevent OOM crashes on low/mid-RAM devices
+                // settings.setOffscreenPreRaster(false);
+                // Allow media (videos, stories) to play smoothly without vendor gesture blocks on MIUI/ColorOS/HiOS
+                settings.setMediaPlaybackRequiresUserGesture(false);
+                settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+                settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
             }
         } catch (Exception ignored) {
         }
@@ -74,6 +83,20 @@ public class MainActivity extends BridgeActivity {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_CODE);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    @Override
+    public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        try {
+            if (this.bridge != null && this.bridge.getWebView() != null) {
+                WebView webView = this.bridge.getWebView();
+                if (level >= TRIM_MEMORY_MODERATE) {
+                    webView.clearCache(false);
                 }
             }
         } catch (Exception ignored) {
