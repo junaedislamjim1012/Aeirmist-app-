@@ -26,7 +26,7 @@ export const AuthPoster: React.FC = () => {
         {/* Big Catchy Headline */}
         <div className="pt-2 max-w-xl">
           <h1 className="text-3xl xl:text-4xl 2xl:text-5xl font-black text-white leading-[1.15] tracking-tight">
-            Find everything u{' '}
+            Find everything you{' '}
             <span className="bg-gradient-to-r from-cyan-400 via-sky-300 via-pink-400 to-fuchsia-400 bg-clip-text text-transparent">
               adore.
             </span>
