@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Eye, EyeOff, Loader2, Chrome, AlertCircle, Check, ArrowLeft, QrCode,
+  Eye, EyeOff, Loader2, AlertCircle, Check, ArrowLeft, QrCode,
   Sparkles, ShieldCheck, Mail, User, Lock, Layers, ArrowRight, ShieldAlert,
   HelpCircle, WifiOff, Settings
 } from 'lucide-react';
@@ -973,23 +973,6 @@ export const AuthSystem: React.FC = () => {
                       className="w-full h-12 rounded-2xl text-xs uppercase tracking-widest font-black transition-all flex items-center justify-center gap-2 cursor-pointer mt-2 shadow-lg bg-gradient-to-r from-[var(--color-aeirmist-cyan)] to-cyan-300 text-black hover:brightness-105 active:scale-[0.98] disabled:bg-[#252a38] disabled:from-transparent disabled:to-transparent disabled:text-slate-400 disabled:border disabled:border-white/10 disabled:shadow-none disabled:cursor-not-allowed"
                     >
                       {loading ? <Loader2 size={16} className="animate-spin text-current" /> : "Verify Identity"}
-                    </button>
-
-                    <div className="flex items-center my-3">
-                      <div className="flex-1 h-px bg-white/20"></div>
-                      <span className="px-4 text-xs font-bold text-slate-300 uppercase tracking-widest">or</span>
-                      <div className="flex-1 h-px bg-white/20"></div>
-                    </div>
-
-                    {/* Google Sign In Only */}
-                    <button
-                      type="button"
-                      onClick={() => handleSocialLogin('google')}
-                      disabled={loading}
-                      className="w-full h-11 bg-white/10 hover:bg-white/15 border border-white/25 text-white font-bold rounded-2xl text-xs uppercase tracking-widest transition-all disabled:opacity-40 flex items-center justify-center gap-2.5 cursor-pointer shadow-sm"
-                    >
-                      <Chrome size={16} className="text-white" />
-                      Continue with Google
                     </button>
                   </motion.form>
                 )}
