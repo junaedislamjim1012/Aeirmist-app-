@@ -48,6 +48,18 @@ public class MainActivity extends BridgeActivity {
                     call.reject("Failed to open notification settings: " + ex.getMessage());
                 }
             }
+        @PluginMethod
+        public void requestNotificationPermission(PluginCall call) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_CODE);
+                    }
+                }
+                call.resolve();
+            } catch (Exception ex) {
+                call.reject("Permission request error: " + ex.getMessage());
+            }
         }
     }
 
@@ -68,22 +80,10 @@ public class MainActivity extends BridgeActivity {
                 settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
                 settings.setLoadsImagesAutomatically(true);
-                // DO NOT enable setOffscreenPreRaster to prevent OOM crashes on low/mid-RAM devices
-                // settings.setOffscreenPreRaster(false);
-                // Allow media (videos, stories) to play smoothly without vendor gesture blocks on MIUI/ColorOS/HiOS
+                // HTML5 video autoplay handles muted stories/reels; keep user gesture policy clean
                 settings.setMediaPlaybackRequiresUserGesture(false);
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-            }
-        } catch (Exception ignored) {
-        }
-
-        // Request POST_NOTIFICATIONS permission on Android 13+ (API 33+)
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_PERMISSION_CODE);
-                }
             }
         } catch (Exception ignored) {
         }
@@ -95,8 +95,9 @@ public class MainActivity extends BridgeActivity {
         try {
             if (this.bridge != null && this.bridge.getWebView() != null) {
                 WebView webView = this.bridge.getWebView();
-                if (level == TRIM_MEMORY_RUNNING_CRITICAL || level >= TRIM_MEMORY_MODERATE) {
-                    webView.clearCache(false);
+                // Only purge ephemeral resources under critical memory pressure, preserving disk cache
+                if (level == TRIM_MEMORY_RUNNING_CRITICAL || level == TRIM_MEMORY_COMPLETE) {
+                    webView.freeMemory();
                 }
             }
         } catch (Exception ignored) {
