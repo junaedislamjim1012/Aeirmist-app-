@@ -48,6 +48,8 @@ public class MainActivity extends BridgeActivity {
                     call.reject("Failed to open notification settings: " + ex.getMessage());
                 }
             }
+        }
+
         @PluginMethod
         public void requestNotificationPermission(PluginCall call) {
             try {
@@ -59,6 +61,114 @@ public class MainActivity extends BridgeActivity {
                 call.resolve();
             } catch (Exception ex) {
                 call.reject("Permission request error: " + ex.getMessage());
+            }
+        }
+
+        @PluginMethod
+        public void selectDownloadFolder(PluginCall call) {
+            try {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+                startActivityForResult(call, intent, "folderPickerResult");
+            } catch (Exception e) {
+                call.reject("Failed to open folder picker: " + e.getMessage());
+            }
+        }
+
+        @ActivityCallback
+        private void folderPickerResult(PluginCall call, androidx.activity.result.ActivityResult result) {
+            if (call == null) return;
+            if (result.getResultCode() == android.app.Activity.RESULT_OK && result.getData() != null) {
+                Uri treeUri = result.getData().getData();
+                if (treeUri != null) {
+                    final int takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+                    try {
+                        getContext().getContentResolver().takePersistableUriPermission(treeUri, takeFlags);
+                    } catch (Exception ignored) {}
+
+                    String displayName = resolveFolderName(treeUri);
+
+                    android.content.SharedPreferences prefs = getContext().getSharedPreferences("aeirmist_prefs", android.content.Context.MODE_PRIVATE);
+                    prefs.edit()
+                            .putString("aeirmist_download_mode", "custom")
+                            .putString("aeirmist_download_custom_uri", treeUri.toString())
+                            .putString("aeirmist_download_custom_name", displayName)
+                            .apply();
+
+                    com.getcapacitor.JSObject ret = new com.getcapacitor.JSObject();
+                    ret.put("success", true);
+                    ret.put("uri", treeUri.toString());
+                    ret.put("name", displayName);
+                    call.resolve(ret);
+                    return;
+                }
+            }
+            com.getcapacitor.JSObject ret = new com.getcapacitor.JSObject();
+            ret.put("canceled", true);
+            call.resolve(ret);
+        }
+
+        private String resolveFolderName(Uri uri) {
+            if (uri == null) return "Custom Folder";
+            try {
+                String docId = android.provider.DocumentsContract.getTreeDocumentId(uri);
+                if (docId != null) {
+                    String[] parts = docId.split(":");
+                    if (parts.length > 1) {
+                        return parts[1];
+                    }
+                    return parts[0];
+                }
+            } catch (Exception ignored) {}
+            return uri.getLastPathSegment() != null ? uri.getLastPathSegment() : "Custom Folder";
+        }
+
+        @PluginMethod
+        public void getDownloadPathConfig(PluginCall call) {
+            try {
+                android.content.SharedPreferences prefs = getContext().getSharedPreferences("aeirmist_prefs", android.content.Context.MODE_PRIVATE);
+                String mode = prefs.getString("aeirmist_download_mode", "system_downloads");
+                String customUri = prefs.getString("aeirmist_download_custom_uri", null);
+                String customName = prefs.getString("aeirmist_download_custom_name", null);
+
+                com.getcapacitor.JSObject ret = new com.getcapacitor.JSObject();
+                ret.put("mode", mode);
+                ret.put("customUri", customUri);
+                ret.put("customName", customName);
+                ret.put("isAvailable", true);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Failed to get download config: " + e.getMessage());
+            }
+        }
+
+        @PluginMethod
+        public void setDownloadMode(PluginCall call) {
+            try {
+                String mode = call.getString("mode", "system_downloads");
+                android.content.SharedPreferences prefs = getContext().getSharedPreferences("aeirmist_prefs", android.content.Context.MODE_PRIVATE);
+                prefs.edit().putString("aeirmist_download_mode", mode).apply();
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("Failed to set download mode: " + e.getMessage());
+            }
+        }
+
+        @PluginMethod
+        public void resetDownloadPath(PluginCall call) {
+            try {
+                android.content.SharedPreferences prefs = getContext().getSharedPreferences("aeirmist_prefs", android.content.Context.MODE_PRIVATE);
+                prefs.edit()
+                        .putString("aeirmist_download_mode", "system_downloads")
+                        .remove("aeirmist_download_custom_uri")
+                        .remove("aeirmist_download_custom_name")
+                        .apply();
+                call.resolve();
+            } catch (Exception e) {
+                call.reject("Failed to reset download path: " + e.getMessage());
             }
         }
     }
