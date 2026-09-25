@@ -12,14 +12,21 @@ import androidx.core.content.ContextCompat;
 import android.content.Intent;
 import android.net.Uri;
 import android.provider.Settings;
+import android.app.DownloadManager;
+import android.content.Context;
+import android.os.Environment;
+import java.util.ArrayList;
+import java.util.List;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.ActivityCallback;
 
 public class MainActivity extends BridgeActivity {
     private static final int NOTIFICATION_PERMISSION_CODE = 1001;
+    private static final int ALL_PERMISSIONS_CODE = 1002;
 
     @CapacitorPlugin(name = "NativeSettings")
     public static class NativeSettingsPlugin extends Plugin {
@@ -61,6 +68,108 @@ public class MainActivity extends BridgeActivity {
                 call.resolve();
             } catch (Exception ex) {
                 call.reject("Permission request error: " + ex.getMessage());
+            }
+        }
+
+        @PluginMethod
+        public void requestAllPermissions(PluginCall call) {
+            try {
+                List<String> neededPermissions = new ArrayList<>();
+
+                // Camera
+                if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    neededPermissions.add(Manifest.permission.CAMERA);
+                }
+
+                // Microphone
+                if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                    neededPermissions.add(Manifest.permission.RECORD_AUDIO);
+                }
+
+                // Location
+                if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    neededPermissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+                }
+                if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                    neededPermissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+                }
+
+                // Storage & Media
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.READ_MEDIA_IMAGES) != PackageManager.PERMISSION_GRANTED) {
+                        neededPermissions.add(Manifest.permission.READ_MEDIA_IMAGES);
+                    }
+                    if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.READ_MEDIA_VIDEO) != PackageManager.PERMISSION_GRANTED) {
+                        neededPermissions.add(Manifest.permission.READ_MEDIA_VIDEO);
+                    }
+                    // Notifications on Android 13+
+                    if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                        neededPermissions.add(Manifest.permission.POST_NOTIFICATIONS);
+                    }
+                } else {
+                    if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                        neededPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE);
+                    }
+                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+                        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                            neededPermissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);
+                        }
+                    }
+                }
+
+                if (!neededPermissions.isEmpty()) {
+                    String[] permArray = neededPermissions.toArray(new String[0]);
+                    ActivityCompat.requestPermissions(getActivity(), permArray, ALL_PERMISSIONS_CODE);
+                }
+
+                com.getcapacitor.JSObject ret = new com.getcapacitor.JSObject();
+                ret.put("requestedCount", neededPermissions.size());
+                ret.put("success", true);
+                call.resolve(ret);
+            } catch (Exception ex) {
+                call.reject("All permissions request error: " + ex.getMessage());
+            }
+        }
+
+        @PluginMethod
+        public void saveMediaToDevice(PluginCall call) {
+            String url = call.getString("url");
+            String filename = call.getString("filename");
+            if (url == null || url.isEmpty()) {
+                call.reject("URL is required");
+                return;
+            }
+
+            try {
+                if (filename == null || filename.isEmpty()) {
+                    String ext = (url.contains(".mp4") || url.contains("video")) ? ".mp4" : ".jpg";
+                    filename = "Aeirmist_" + System.currentTimeMillis() + ext;
+                }
+
+                DownloadManager dm = (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+                Uri downloadUri = Uri.parse(url);
+                DownloadManager.Request request = new DownloadManager.Request(downloadUri);
+                request.setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI | DownloadManager.Request.NETWORK_MOBILE);
+                request.setTitle(filename);
+                request.setDescription("Saving media to Aeirmist gallery...");
+                request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+
+                // Save directly to Pictures/Aeirmist so it shows in phone Gallery instantly without opening browser
+                try {
+                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_PICTURES, "Aeirmist/" + filename);
+                } catch (Exception ignored) {
+                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
+                }
+
+                dm.enqueue(request);
+
+                com.getcapacitor.JSObject ret = new com.getcapacitor.JSObject();
+                ret.put("success", true);
+                ret.put("filename", filename);
+                ret.put("message", "Media saved directly to device gallery.");
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Failed to save media to device: " + e.getMessage());
             }
         }
 
@@ -190,6 +299,8 @@ public class MainActivity extends BridgeActivity {
                 settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
                 settings.setLoadsImagesAutomatically(true);
+                settings.setGeolocationEnabled(true);
+                settings.setAllowFileAccess(true);
                 // HTML5 video autoplay handles muted stories/reels; keep user gesture policy clean
                 settings.setMediaPlaybackRequiresUserGesture(false);
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
